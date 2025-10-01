@@ -1,73 +1,504 @@
 """
 MCP tools for HTTP operations and state management.
-These are placeholder implementations that will be fully implemented in task 4.2.
+Implements agent tools for HTTP operations through MCP Gateway and session state management.
 """
-from typing import Optional, Dict, Any
+import json
+import uuid
+from datetime import datetime
+from typing import Optional, Dict, Any, Union
+import httpx
+import structlog
 from llama_index.core.tools import BaseTool
+
+from models import MCPToolCall, HTTPMethod, ToolExecution
+
+
+logger = structlog.get_logger(__name__)
 
 
 class HTTPGetTool(BaseTool):
     """Tool for HTTP GET operations through MCP Gateway."""
     
     def __init__(self, mcp_gateway_url: str, agent_worker: Optional[Any] = None):
-        self.mcp_gateway_url = mcp_gateway_url
+        self.mcp_gateway_url = mcp_gateway_url.rstrip('/')
         self.agent_worker = agent_worker
         super().__init__(
             name="http_get",
-            description="Perform HTTP GET request through MCP Gateway"
+            description=(
+                "Perform HTTP GET request through MCP Gateway. "
+                "Use for read-only operations like fetching data, checking status, or retrieving information. "
+                "Parameters: api_name (str), path (str), headers (dict, optional)"
+            )
         )
     
-    def call(self, *args, **kwargs):
-        # Placeholder implementation - will be completed in task 4.2
-        return {"status": "placeholder", "method": "GET"}
+    def call(self, api_name: str, path: str, headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
+        """
+        Execute HTTP GET request through MCP Gateway.
+        
+        Args:
+            api_name: Target API name for MCP Gateway routing
+            path: API endpoint path
+            headers: Optional headers (session tokens, auth, etc.)
+            
+        Returns:
+            Dict containing response data and metadata
+        """
+        trace_id = str(uuid.uuid4())
+        start_time = datetime.utcnow()
+        
+        # Create MCP-compliant tool call
+        mcp_call = MCPToolCall(
+            target_api_name=api_name,
+            http_method=HTTPMethod.GET,
+            endpoint_path=path,
+            session_headers=headers or {}
+        )
+        
+        logger.info(
+            "Executing HTTP GET tool",
+            trace_id=trace_id,
+            api_name=api_name,
+            path=path,
+            has_headers=bool(headers)
+        )
+        
+        try:
+            # Send request to MCP Gateway
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    f"{self.mcp_gateway_url}/mcp/route",
+                    json=mcp_call.model_dump(),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Trace-ID": trace_id
+                    }
+                )
+                
+                execution_time = (datetime.utcnow() - start_time).total_seconds()
+                
+                # Process response
+                result = {
+                    "success": response.status_code < 400,
+                    "status_code": response.status_code,
+                    "headers": dict(response.headers),
+                    "execution_time": execution_time,
+                    "trace_id": trace_id,
+                    "method": "GET",
+                    "api_name": api_name,
+                    "path": path
+                }
+                
+                # Parse response body
+                try:
+                    result["data"] = response.json()
+                except json.JSONDecodeError:
+                    result["data"] = response.text
+                
+                # Extract session data from response headers for state management
+                session_data = {}
+                for header_name, header_value in response.headers.items():
+                    if header_name.lower() in ['set-cookie', 'authorization', 'x-session-token']:
+                        session_data[header_name] = header_value
+                
+                if session_data:
+                    result["session_data"] = session_data
+                
+                logger.info(
+                    "HTTP GET completed",
+                    trace_id=trace_id,
+                    status_code=response.status_code,
+                    execution_time=execution_time,
+                    success=result["success"]
+                )
+                
+                return result
+                
+        except httpx.RequestError as e:
+            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            error_result = {
+                "success": False,
+                "error": str(e),
+                "error_type": "request_error",
+                "execution_time": execution_time,
+                "trace_id": trace_id,
+                "method": "GET",
+                "api_name": api_name,
+                "path": path
+            }
+            
+            logger.error(
+                "HTTP GET failed",
+                trace_id=trace_id,
+                error=str(e),
+                execution_time=execution_time
+            )
+            
+            return error_result
 
 
 class HTTPPostTool(BaseTool):
     """Tool for HTTP POST operations through MCP Gateway."""
     
     def __init__(self, mcp_gateway_url: str, agent_worker: Optional[Any] = None):
-        self.mcp_gateway_url = mcp_gateway_url
+        self.mcp_gateway_url = mcp_gateway_url.rstrip('/')
         self.agent_worker = agent_worker
         super().__init__(
             name="http_post",
-            description="Perform HTTP POST request through MCP Gateway"
+            description=(
+                "Perform HTTP POST request through MCP Gateway. "
+                "Use for write operations like login, form submission, creating resources. "
+                "Parameters: api_name (str), path (str), data (dict), headers (dict, optional)"
+            )
         )
     
-    def call(self, *args, **kwargs):
-        # Placeholder implementation - will be completed in task 4.2
-        return {"status": "placeholder", "method": "POST"}
+    def call(self, api_name: str, path: str, data: Dict[str, Any], headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
+        """
+        Execute HTTP POST request through MCP Gateway.
+        
+        Args:
+            api_name: Target API name for MCP Gateway routing
+            path: API endpoint path
+            data: Request payload data
+            headers: Optional headers (session tokens, auth, etc.)
+            
+        Returns:
+            Dict containing response data and metadata
+        """
+        trace_id = str(uuid.uuid4())
+        start_time = datetime.utcnow()
+        
+        # Create MCP-compliant tool call
+        mcp_call = MCPToolCall(
+            target_api_name=api_name,
+            http_method=HTTPMethod.POST,
+            endpoint_path=path,
+            request_payload=data,
+            session_headers=headers or {}
+        )
+        
+        logger.info(
+            "Executing HTTP POST tool",
+            trace_id=trace_id,
+            api_name=api_name,
+            path=path,
+            has_data=bool(data),
+            has_headers=bool(headers)
+        )
+        
+        try:
+            # Send request to MCP Gateway
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    f"{self.mcp_gateway_url}/mcp/route",
+                    json=mcp_call.model_dump(),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Trace-ID": trace_id
+                    }
+                )
+                
+                execution_time = (datetime.utcnow() - start_time).total_seconds()
+                
+                # Process response
+                result = {
+                    "success": response.status_code < 400,
+                    "status_code": response.status_code,
+                    "headers": dict(response.headers),
+                    "execution_time": execution_time,
+                    "trace_id": trace_id,
+                    "method": "POST",
+                    "api_name": api_name,
+                    "path": path
+                }
+                
+                # Parse response body
+                try:
+                    result["data"] = response.json()
+                except json.JSONDecodeError:
+                    result["data"] = response.text
+                
+                # Extract session data from response headers for state management
+                session_data = {}
+                for header_name, header_value in response.headers.items():
+                    if header_name.lower() in ['set-cookie', 'authorization', 'x-session-token']:
+                        session_data[header_name] = header_value
+                
+                # Also extract session data from response body if it contains tokens/IDs
+                if isinstance(result.get("data"), dict):
+                    response_data = result["data"]
+                    for key in ['token', 'access_token', 'session_id', 'transaction_id', 'user_id']:
+                        if key in response_data:
+                            session_data[key] = response_data[key]
+                
+                if session_data:
+                    result["session_data"] = session_data
+                
+                logger.info(
+                    "HTTP POST completed",
+                    trace_id=trace_id,
+                    status_code=response.status_code,
+                    execution_time=execution_time,
+                    success=result["success"],
+                    has_session_data=bool(session_data)
+                )
+                
+                return result
+                
+        except httpx.RequestError as e:
+            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            error_result = {
+                "success": False,
+                "error": str(e),
+                "error_type": "request_error",
+                "execution_time": execution_time,
+                "trace_id": trace_id,
+                "method": "POST",
+                "api_name": api_name,
+                "path": path
+            }
+            
+            logger.error(
+                "HTTP POST failed",
+                trace_id=trace_id,
+                error=str(e),
+                execution_time=execution_time
+            )
+            
+            return error_result
 
 
 class HTTPPutTool(BaseTool):
     """Tool for HTTP PUT operations through MCP Gateway."""
     
     def __init__(self, mcp_gateway_url: str, agent_worker: Optional[Any] = None):
-        self.mcp_gateway_url = mcp_gateway_url
+        self.mcp_gateway_url = mcp_gateway_url.rstrip('/')
         self.agent_worker = agent_worker
         super().__init__(
             name="http_put",
-            description="Perform HTTP PUT request through MCP Gateway"
+            description=(
+                "Perform HTTP PUT request through MCP Gateway. "
+                "Use for update operations like modifying resources or updating data. "
+                "Parameters: api_name (str), path (str), data (dict), headers (dict, optional)"
+            )
         )
     
-    def call(self, *args, **kwargs):
-        # Placeholder implementation - will be completed in task 4.2
-        return {"status": "placeholder", "method": "PUT"}
+    def call(self, api_name: str, path: str, data: Dict[str, Any], headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
+        """
+        Execute HTTP PUT request through MCP Gateway.
+        
+        Args:
+            api_name: Target API name for MCP Gateway routing
+            path: API endpoint path
+            data: Request payload data
+            headers: Optional headers (session tokens, auth, etc.)
+            
+        Returns:
+            Dict containing response data and metadata
+        """
+        trace_id = str(uuid.uuid4())
+        start_time = datetime.utcnow()
+        
+        # Create MCP-compliant tool call
+        mcp_call = MCPToolCall(
+            target_api_name=api_name,
+            http_method=HTTPMethod.PUT,
+            endpoint_path=path,
+            request_payload=data,
+            session_headers=headers or {}
+        )
+        
+        logger.info(
+            "Executing HTTP PUT tool",
+            trace_id=trace_id,
+            api_name=api_name,
+            path=path,
+            has_data=bool(data),
+            has_headers=bool(headers)
+        )
+        
+        try:
+            # Send request to MCP Gateway
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    f"{self.mcp_gateway_url}/mcp/route",
+                    json=mcp_call.model_dump(),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Trace-ID": trace_id
+                    }
+                )
+                
+                execution_time = (datetime.utcnow() - start_time).total_seconds()
+                
+                # Process response
+                result = {
+                    "success": response.status_code < 400,
+                    "status_code": response.status_code,
+                    "headers": dict(response.headers),
+                    "execution_time": execution_time,
+                    "trace_id": trace_id,
+                    "method": "PUT",
+                    "api_name": api_name,
+                    "path": path
+                }
+                
+                # Parse response body
+                try:
+                    result["data"] = response.json()
+                except json.JSONDecodeError:
+                    result["data"] = response.text
+                
+                # Extract session data from response headers for state management
+                session_data = {}
+                for header_name, header_value in response.headers.items():
+                    if header_name.lower() in ['set-cookie', 'authorization', 'x-session-token']:
+                        session_data[header_name] = header_value
+                
+                if session_data:
+                    result["session_data"] = session_data
+                
+                logger.info(
+                    "HTTP PUT completed",
+                    trace_id=trace_id,
+                    status_code=response.status_code,
+                    execution_time=execution_time,
+                    success=result["success"]
+                )
+                
+                return result
+                
+        except httpx.RequestError as e:
+            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            error_result = {
+                "success": False,
+                "error": str(e),
+                "error_type": "request_error",
+                "execution_time": execution_time,
+                "trace_id": trace_id,
+                "method": "PUT",
+                "api_name": api_name,
+                "path": path
+            }
+            
+            logger.error(
+                "HTTP PUT failed",
+                trace_id=trace_id,
+                error=str(e),
+                execution_time=execution_time
+            )
+            
+            return error_result
 
 
 class HTTPDeleteTool(BaseTool):
     """Tool for HTTP DELETE operations through MCP Gateway."""
     
     def __init__(self, mcp_gateway_url: str, agent_worker: Optional[Any] = None):
-        self.mcp_gateway_url = mcp_gateway_url
+        self.mcp_gateway_url = mcp_gateway_url.rstrip('/')
         self.agent_worker = agent_worker
         super().__init__(
             name="http_delete",
-            description="Perform HTTP DELETE request through MCP Gateway"
+            description=(
+                "Perform HTTP DELETE request through MCP Gateway. "
+                "Use for delete operations like removing resources or canceling transactions. "
+                "Parameters: api_name (str), path (str), headers (dict, optional)"
+            )
         )
     
-    def call(self, *args, **kwargs):
-        # Placeholder implementation - will be completed in task 4.2
-        return {"status": "placeholder", "method": "DELETE"}
+    def call(self, api_name: str, path: str, headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
+        """
+        Execute HTTP DELETE request through MCP Gateway.
+        
+        Args:
+            api_name: Target API name for MCP Gateway routing
+            path: API endpoint path
+            headers: Optional headers (session tokens, auth, etc.)
+            
+        Returns:
+            Dict containing response data and metadata
+        """
+        trace_id = str(uuid.uuid4())
+        start_time = datetime.utcnow()
+        
+        # Create MCP-compliant tool call
+        mcp_call = MCPToolCall(
+            target_api_name=api_name,
+            http_method=HTTPMethod.DELETE,
+            endpoint_path=path,
+            session_headers=headers or {}
+        )
+        
+        logger.info(
+            "Executing HTTP DELETE tool",
+            trace_id=trace_id,
+            api_name=api_name,
+            path=path,
+            has_headers=bool(headers)
+        )
+        
+        try:
+            # Send request to MCP Gateway
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    f"{self.mcp_gateway_url}/mcp/route",
+                    json=mcp_call.model_dump(),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Trace-ID": trace_id
+                    }
+                )
+                
+                execution_time = (datetime.utcnow() - start_time).total_seconds()
+                
+                # Process response
+                result = {
+                    "success": response.status_code < 400,
+                    "status_code": response.status_code,
+                    "headers": dict(response.headers),
+                    "execution_time": execution_time,
+                    "trace_id": trace_id,
+                    "method": "DELETE",
+                    "api_name": api_name,
+                    "path": path
+                }
+                
+                # Parse response body
+                try:
+                    result["data"] = response.json()
+                except json.JSONDecodeError:
+                    result["data"] = response.text
+                
+                logger.info(
+                    "HTTP DELETE completed",
+                    trace_id=trace_id,
+                    status_code=response.status_code,
+                    execution_time=execution_time,
+                    success=result["success"]
+                )
+                
+                return result
+                
+        except httpx.RequestError as e:
+            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            error_result = {
+                "success": False,
+                "error": str(e),
+                "error_type": "request_error",
+                "execution_time": execution_time,
+                "trace_id": trace_id,
+                "method": "DELETE",
+                "api_name": api_name,
+                "path": path
+            }
+            
+            logger.error(
+                "HTTP DELETE failed",
+                trace_id=trace_id,
+                error=str(e),
+                execution_time=execution_time
+            )
+            
+            return error_result
 
 
 class StateUpdateTool(BaseTool):
@@ -77,9 +508,111 @@ class StateUpdateTool(BaseTool):
         self.agent_worker = agent_worker
         super().__init__(
             name="state_update",
-            description="Update internal session context and state"
+            description=(
+                "Update internal session context and state. "
+                "Use to persist session data like cookies, tokens, transaction IDs for stateful behavior. "
+                "Parameters: session_id (str), session_data (dict)"
+            )
         )
     
-    def call(self, *args, **kwargs):
-        # Placeholder implementation - will be completed in task 4.2
-        return {"status": "placeholder", "action": "state_update"}
+    def call(self, session_id: str, session_data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+        """
+        Update session context with new state data.
+        
+        Args:
+            session_id: Session identifier
+            session_data: Dictionary containing session state (cookies, tokens, etc.)
+            
+        Returns:
+            Dict containing update status and metadata
+        """
+        trace_id = str(uuid.uuid4())
+        start_time = datetime.utcnow()
+        
+        logger.info(
+            "Executing state update tool",
+            trace_id=trace_id,
+            session_id=session_id,
+            data_keys=list(session_data.keys()) if session_data else []
+        )
+        
+        try:
+            # Update session data through agent worker if available
+            if self.agent_worker and hasattr(self.agent_worker, 'update_session_data'):
+                self.agent_worker.update_session_data(session_id, session_data)
+                
+                # Get updated session context for verification
+                session_context = None
+                if hasattr(self.agent_worker, 'get_session'):
+                    session_context = self.agent_worker.get_session(session_id)
+                
+                execution_time = (datetime.utcnow() - start_time).total_seconds()
+                
+                result = {
+                    "success": True,
+                    "session_id": session_id,
+                    "updated_keys": list(session_data.keys()),
+                    "execution_time": execution_time,
+                    "trace_id": trace_id,
+                    "action": "state_update"
+                }
+                
+                if session_context:
+                    result["session_step"] = session_context.current_step
+                    result["session_start_time"] = session_context.start_time.isoformat()
+                    result["last_action_time"] = session_context.last_action_time.isoformat()
+                
+                logger.info(
+                    "State update completed",
+                    trace_id=trace_id,
+                    session_id=session_id,
+                    execution_time=execution_time,
+                    updated_keys=list(session_data.keys())
+                )
+                
+                return result
+                
+            else:
+                # Fallback when agent worker is not available
+                execution_time = (datetime.utcnow() - start_time).total_seconds()
+                
+                result = {
+                    "success": True,
+                    "session_id": session_id,
+                    "updated_keys": list(session_data.keys()),
+                    "execution_time": execution_time,
+                    "trace_id": trace_id,
+                    "action": "state_update",
+                    "note": "Agent worker not available, state update logged only"
+                }
+                
+                logger.warning(
+                    "State update completed without agent worker",
+                    trace_id=trace_id,
+                    session_id=session_id,
+                    execution_time=execution_time
+                )
+                
+                return result
+                
+        except Exception as e:
+            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            error_result = {
+                "success": False,
+                "error": str(e),
+                "error_type": "state_update_error",
+                "session_id": session_id,
+                "execution_time": execution_time,
+                "trace_id": trace_id,
+                "action": "state_update"
+            }
+            
+            logger.error(
+                "State update failed",
+                trace_id=trace_id,
+                session_id=session_id,
+                error=str(e),
+                execution_time=execution_time
+            )
+            
+            return error_result
