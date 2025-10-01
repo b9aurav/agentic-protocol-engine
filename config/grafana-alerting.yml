@@ -1,0 +1,260 @@
+apiVersion: 1
+
+# Notification channels configuration
+notifiers:
+  - name: ape-alerts-webhook
+    type: webhook
+    uid: ape-webhook
+    org_id: 1
+    is_default: true
+    send_reminder: true
+    disable_resolve_message: false
+    frequency: "10s"
+    settings:
+      url: "http://localhost:3001/webhook/alerts"
+      username: ""
+      password: ""
+      channel: "#ape-alerts"
+      title: "APE Load Testing Alert"
+      text: |
+        **Alert:** {{ range .Alerts }}{{ .Annotations.summary }}{{ end }}
+        **Description:** {{ range .Alerts }}{{ .Annotations.description }}{{ end }}
+        **Severity:** {{ range .Alerts }}{{ .Labels.severity }}{{ end }}
+        **Service:** {{ range .Alerts }}{{ .Labels.service }}{{ end }}
+        **Time:** {{ .CommonAnnotations.timestamp }}
+
+  - name: ape-alerts-email
+    type: email
+    uid: ape-email
+    org_id: 1
+    is_default: false
+    send_reminder: true
+    disable_resolve_message: false
+    frequency: "5m"
+    settings:
+      addresses: "admin@example.com;ops@example.com"
+      subject: "APE Load Testing Alert - {{ .CommonLabels.alertname }}"
+      body: |
+        Alert Details:
+        - Alert: {{ .CommonLabels.alertname }}
+        - Severity: {{ .CommonLabels.severity }}
+        - Service: {{ .CommonLabels.service }}
+        - Description: {{ .CommonAnnotations.description }}
+        - Time: {{ .CommonAnnotations.timestamp }}
+        
+        Dashboard: http://localhost:3000/d/ape-overview/ape-load-testing-overview
+
+# Alert rules configuration
+groups:
+  - name: ape_critical_alerts
+    orgId: 1
+    folder: APE Alerts
+    interval: 10s
+    rules:
+      - uid: ape_high_error_rate
+        title: High Error Rate
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              expr: rate(ape_agent_errors_total[5m]) / rate(ape_agent_requests_total[5m]) * 100
+              interval: ""
+              refId: A
+        noDataState: NoData
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "Agent error rate is {{ $value }}% which exceeds the 10% threshold"
+          summary: "High error rate detected in APE agents"
+        labels:
+          severity: warning
+          service: ape-agent
+        notifications:
+          - uid: ape-webhook
+          - uid: ape-email
+
+      - uid: ape_low_success_rate
+        title: Low Success Rate
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              expr: rate(ape_successful_sessions_total[5m]) / rate(ape_total_sessions_total[5m]) * 100
+              interval: ""
+              refId: A
+        noDataState: NoData
+        execErrState: Alerting
+        for: 3m
+        annotations:
+          description: "Session success rate is {{ $value }}% which is below the 70% threshold"
+          summary: "Low session success rate detected"
+        labels:
+          severity: critical
+          service: ape-sessions
+        notifications:
+          - uid: ape-webhook
+          - uid: ape-email
+
+      - uid: ape_high_ttft
+        title: High TTFT Latency
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              expr: histogram_quantile(0.95, rate(ape_inference_ttft_seconds_bucket[5m]))
+              interval: ""
+              refId: A
+        noDataState: NoData
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "95th percentile TTFT is {{ $value }}s which exceeds the 2s threshold"
+          summary: "High Time to First Token latency detected"
+        labels:
+          severity: warning
+          service: cerebras-proxy
+        notifications:
+          - uid: ape-webhook
+
+      - uid: ape_high_mtba
+        title: High MTBA
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              expr: histogram_quantile(0.95, rate(ape_agent_mtba_seconds_bucket[5m]))
+              interval: ""
+              refId: A
+        noDataState: NoData
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "95th percentile MTBA is {{ $value }}s which exceeds the 1s threshold"
+          summary: "High Mean Time Between Actions detected"
+        labels:
+          severity: warning
+          service: ape-agent
+        notifications:
+          - uid: ape-webhook
+
+      - uid: ape_resource_exhaustion
+        title: Resource Exhaustion
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              expr: (100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 80 or (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+              interval: ""
+              refId: A
+        noDataState: NoData
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "System resources (CPU or Memory) are critically high: {{ $value }}%"
+          summary: "Critical resource usage detected"
+        labels:
+          severity: critical
+          service: infrastructure
+        notifications:
+          - uid: ape-webhook
+          - uid: ape-email
+
+      - uid: ape_agent_scaling_limit
+        title: Agent Scaling Limit
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 60
+              to: 0
+            model:
+              expr: count(up{job=~"ape-agent.*"} == 1)
+              interval: ""
+              refId: A
+        noDataState: NoData
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          description: "Number of concurrent agents ({{ $value }}) exceeds recommended limit of 1000"
+          summary: "Agent scaling limit reached"
+        labels:
+          severity: warning
+          service: ape-scaling
+        notifications:
+          - uid: ape-webhook
+
+  - name: ape_performance_alerts
+    orgId: 1
+    folder: APE Performance
+    interval: 15s
+    rules:
+      - uid: ape_gateway_latency
+        title: High Gateway Latency
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              expr: histogram_quantile(0.95, rate(mcp_gateway_request_duration_seconds_bucket[5m]))
+              interval: ""
+              refId: A
+        noDataState: NoData
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "MCP Gateway 95th percentile latency is {{ $value }}s"
+          summary: "High latency detected in MCP Gateway"
+        labels:
+          severity: warning
+          service: mcp-gateway
+        notifications:
+          - uid: ape-webhook
+
+      - uid: ape_inference_failure
+        title: Inference Failure Rate
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 300
+              to: 0
+            model:
+              expr: rate(cerebras_proxy_errors_total[5m]) / rate(cerebras_proxy_requests_total[5m]) * 100
+              interval: ""
+              refId: A
+        noDataState: NoData
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "Cerebras inference error rate is {{ $value }}%"
+          summary: "High inference failure rate detected"
+        labels:
+          severity: warning
+          service: cerebras-proxy
+        notifications:
+          - uid: ape-webhook

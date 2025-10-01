@@ -416,11 +416,81 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{job=\"ape-agent\"} | json | trace_id=\"$trace_id\"",
+          "expr": "{job=\"ape-agent\"} | json | trace_id=\"$trace_id\" | agent_id=~\"$agent_id\" | line_format \"{{.timestamp}} [{{.level}}] Agent {{.agent_id}} ({{.trace_id}}): {{.message}}\"",
           "refId": "A"
         }
       ],
-      "title": "Agent Logs (Filter by Trace ID)",
+      "title": "Agent Logs (Trace: $trace_id, Agent: $agent_id)",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 6,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{job=~\"ape-.*\"} | json | trace_id=\"$trace_id\" | line_format \"{{.timestamp}} [{{.level}}] {{.service_name}}: {{.message}}\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Cross-Service Trace Correlation (Trace: $trace_id)",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 7,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{job=\"ape-agent\"} | json | agent_id=~\"$agent_id\" |= \"ERROR\" or \"WARN\" or \"CRITICAL\" | line_format \"{{.timestamp}} [{{.level}}] Agent {{.agent_id}}: {{.message}}\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Agent Error Logs (Agent: $agent_id)",
       "type": "logs"
     }
   ],

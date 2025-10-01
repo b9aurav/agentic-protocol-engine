@@ -193,3 +193,82 @@ groups:
         annotations:
           summary: "High container restart rate"
           description: "Container restart rate is above 0.1/sec for {{ $labels.name }}"
+
+  - name: ape_realtime_alerts
+    rules:
+      # Real-time performance degradation
+      - alert: PerformanceDegradation
+        expr: (histogram_quantile(0.95, rate(ape_inference_ttft_seconds_bucket[5m])) > 2.0) and (histogram_quantile(0.95, rate(ape_agent_mtba_seconds_bucket[5m])) > 1.0)
+        for: 1m
+        labels:
+          severity: critical
+          service: ape-performance
+        annotations:
+          summary: "Critical performance degradation detected"
+          description: "Both TTFT ({{ $value }}s) and MTBA are above critical thresholds, indicating system overload"
+
+      # Concurrent agent scaling issues
+      - alert: AgentScalingIssue
+        expr: (count(up{job=~\"ape-agent.*\"} == 1) > 900) and (rate(ape_agent_errors_total[5m]) / rate(ape_agent_requests_total[5m]) > 0.15)
+        for: 2m
+        labels:
+          severity: warning
+          service: ape-scaling
+        annotations:
+          summary: "Agent scaling causing performance issues"
+          description: "High agent count ({{ $value }}) with elevated error rates suggests scaling limits reached"
+
+      # Session success rate critical
+      - alert: CriticalSessionFailureRate
+        expr: rate(ape_successful_sessions_total[5m]) / rate(ape_total_sessions_total[5m]) < 0.5
+        for: 3m
+        labels:
+          severity: critical
+          service: ape-sessions
+        annotations:
+          summary: "Critical session failure rate"
+          description: "Session success rate has dropped below 50% for more than 3 minutes"
+
+      # Trace correlation issues
+      - alert: TraceCorrelationFailure
+        expr: increase(loki_ingester_streams_created_total[5m]) == 0
+        for: 2m
+        labels:
+          severity: warning
+          service: observability
+        annotations:
+          summary: "Log ingestion stopped"
+          description: "No new log streams created in Loki, trace correlation may be broken"
+
+      # Resource exhaustion prediction
+      - alert: ResourceExhaustionPredicted
+        expr: predict_linear(node_memory_MemAvailable_bytes[30m], 3600) < 0
+        for: 5m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "Memory exhaustion predicted"
+          description: "System memory will be exhausted within 1 hour based on current trend"
+
+      # Gateway latency spike
+      - alert: GatewayLatencySpike
+        expr: histogram_quantile(0.95, rate(mcp_gateway_request_duration_seconds_bucket[5m])) > 10.0
+        for: 1m
+        labels:
+          severity: critical
+          service: mcp-gateway
+        annotations:
+          summary: "Severe gateway latency spike"
+          description: "MCP Gateway 95th percentile latency is {{ $value }}s, indicating severe bottleneck"
+
+      # Cerebras inference failure
+      - alert: CerebrasInferenceFailure
+        expr: rate(cerebras_proxy_errors_total[5m]) / rate(cerebras_proxy_requests_total[5m]) > 0.2
+        for: 1m
+        labels:
+          severity: critical
+          service: cerebras-proxy
+        annotations:
+          summary: "High Cerebras inference failure rate"
+          description: "Cerebras inference error rate is {{ $value }}%, affecting agent decision-making"
