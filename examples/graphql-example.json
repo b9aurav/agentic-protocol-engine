@@ -1,107 +1,103 @@
 {
-  "name": "Social Media GraphQL API Load Test",
-  "description": "Load test for a social media platform using GraphQL with complex queries and mutations",
-  "target": {
-    "name": "social-graphql",
-    "baseUrl": "https://api.social.example.com/graphql",
-    "authentication": {
-      "type": "jwt",
-      "loginMutation": "mutation Login($email: String!, $password: String!) { login(email: $email, password: $password) { token user { id name email } } }",
-      "credentials": {
-        "email": "test.user@example.com",
-        "password": "test-password-456"
-      },
-      "tokenField": "data.login.token"
-    },
-    "headers": {
-      "Content-Type": "application/json",
-      "Accept": "application/json"
-    }
-  },
-  "agents": {
-    "count": 75,
-    "rampUp": "2m",
-    "goals": [
-      "Query user profile and friend connections",
-      "Create new posts with text and media",
-      "Browse and interact with news feed",
-      "Send and receive direct messages",
-      "Join and participate in group discussions",
-      "Search for users and content",
-      "Update profile information and settings",
-      "Manage privacy and notification preferences"
+  "name": "GraphQL API Load Test Example",
+  "description": "Production-ready configuration for testing a GraphQL API application",
+  "applicationType": "graphql",
+  "config": {
+    "projectName": "social-media-graphql-test",
+    "targetUrl": "https://graphql.social-app.example.com",
+    "targetPort": 443,
+    "authType": "bearer",
+    "authToken": "your_graphql_jwt_token_here",
+    "agentCount": 30,
+    "testDuration": 20,
+    "testGoal": "Simulate social media user interactions including posting content, following users, and browsing feeds with complex GraphQL queries and mutations",
+    "endpoints": [
+      "/graphql",
+      "/health",
+      "/metrics"
     ],
-    "sessionDuration": "15m",
-    "thinkTime": {
-      "min": 2,
-      "max": 8
+    "customHeaders": {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "User-Agent": "APE-LoadTest/1.0",
+      "Apollo-Require-Preflight": "true"
     }
   },
-  "test": {
-    "duration": "45m",
-    "warmup": "3m",
-    "cooldown": "2m"
-  },
-  "graphql": {
-    "introspection": true,
+  "graphqlOperations": {
     "queries": [
       {
-        "name": "GetUserProfile",
-        "query": "query GetUserProfile($userId: ID!) { user(id: $userId) { id name email avatar posts { id content createdAt likes } } }",
-        "variables": {
-          "userId": "dynamic"
-        }
+        "name": "getUserProfile",
+        "complexity": "low",
+        "description": "Fetch user profile information",
+        "example": "query GetUser($id: ID!) { user(id: $id) { id name email posts { id title content } } }"
       },
       {
-        "name": "GetNewsFeed",
-        "query": "query GetNewsFeed($limit: Int!, $offset: Int!) { posts(limit: $limit, offset: $offset) { id content author { name avatar } createdAt likes comments { id text author { name } } } }",
-        "variables": {
-          "limit": 20,
-          "offset": "dynamic"
-        }
+        "name": "getFeed",
+        "complexity": "medium",
+        "description": "Fetch user's personalized feed",
+        "example": "query GetFeed($limit: Int, $offset: Int) { feed(limit: $limit, offset: $offset) { posts { id title content author { name } comments { count } likes { count } } } }"
+      },
+      {
+        "name": "searchUsers",
+        "complexity": "high",
+        "description": "Search users with complex filtering",
+        "example": "query SearchUsers($query: String!, $filters: UserFilters) { searchUsers(query: $query, filters: $filters) { users { id name avatar followers { count } posts { count } } totalCount } }"
       }
     ],
     "mutations": [
       {
-        "name": "CreatePost",
-        "mutation": "mutation CreatePost($content: String!, $mediaUrls: [String!]) { createPost(content: $content, mediaUrls: $mediaUrls) { id content createdAt author { name } } }",
-        "variables": {
-          "content": "dynamic",
-          "mediaUrls": []
-        }
+        "name": "createPost",
+        "complexity": "medium",
+        "description": "Create a new post",
+        "example": "mutation CreatePost($input: PostInput!) { createPost(input: $input) { id title content createdAt author { name } } }"
       },
       {
-        "name": "LikePost",
-        "mutation": "mutation LikePost($postId: ID!) { likePost(postId: $postId) { id likes } }",
-        "variables": {
-          "postId": "dynamic"
-        }
+        "name": "followUser",
+        "complexity": "low",
+        "description": "Follow another user",
+        "example": "mutation FollowUser($userId: ID!) { followUser(userId: $userId) { success user { id name isFollowing } } }"
+      },
+      {
+        "name": "likePost",
+        "complexity": "low",
+        "description": "Like a post",
+        "example": "mutation LikePost($postId: ID!) { likePost(postId: $postId) { success post { id likesCount isLiked } } }"
       }
     ]
   },
-  "validation": {
-    "successCriteria": {
-      "successfulSessions": 80,
-      "errorRate": 8,
-      "avgResponseTime": 1500
-    },
-    "queries": [
-      {
-        "name": "GetUserProfile",
-        "maxResponseTime": 800,
-        "expectedFields": ["id", "name", "email"]
-      },
-      {
-        "name": "GetNewsFeed",
-        "maxResponseTime": 1200,
-        "expectedFields": ["posts"]
-      }
-    ]
+  "expectedBehavior": {
+    "authentication": "Bearer token authentication with GraphQL context",
+    "sessionManagement": "Stateful sessions with user context and permissions",
+    "typicalUserFlow": [
+      "Authenticate and get user context",
+      "Fetch user profile and preferences",
+      "Load personalized feed with complex queries",
+      "Search for users and content",
+      "Create new posts and content",
+      "Interact with other users' content (likes, comments)",
+      "Follow/unfollow users",
+      "Update profile information"
+    ],
+    "performanceTargets": {
+      "averageResponseTime": "< 300ms for simple queries, < 1s for complex queries",
+      "p95ResponseTime": "< 800ms for simple queries, < 2s for complex queries",
+      "errorRate": "< 0.5%",
+      "throughput": "500+ operations/minute"
+    }
   },
-  "cerebras": {
-    "model": "llama3.1-8b",
-    "temperature": 0.8,
-    "maxTokens": 1200,
-    "systemPrompt": "You are simulating a social media user. Engage naturally with content, create meaningful posts, and interact with other users' content. Use GraphQL queries and mutations appropriately."
+  "recommendations": {
+    "agentScaling": "Start with 10-15 agents due to GraphQL query complexity, scale carefully",
+    "testDuration": "Run for 15-45 minutes to test query optimization and caching",
+    "monitoring": "Focus on query complexity, resolver performance, and N+1 query detection",
+    "queryOptimization": "Test both simple and complex queries to validate performance across different use cases",
+    "caching": "Verify that query result caching and DataLoader patterns work under load"
+  },
+  "graphqlSpecificConfig": {
+    "introspectionEnabled": true,
+    "maxQueryDepth": 10,
+    "maxQueryComplexity": 1000,
+    "queryTimeout": 30000,
+    "batchingEnabled": true,
+    "persistedQueries": false
   }
 }

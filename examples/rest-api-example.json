@@ -1,80 +1,60 @@
 {
-  "name": "E-commerce REST API Load Test",
-  "description": "Comprehensive load test for an e-commerce REST API with user authentication and shopping workflows",
-  "target": {
-    "name": "ecommerce-api",
-    "baseUrl": "https://api.shop.example.com",
-    "authentication": {
-      "type": "bearer",
-      "loginEndpoint": "/auth/login",
-      "credentials": {
-        "username": "loadtest-user",
-        "password": "secure-password-123"
-      },
-      "tokenField": "access_token",
-      "refreshEndpoint": "/auth/refresh"
-    },
-    "headers": {
+  "name": "REST API Load Test Example",
+  "description": "Production-ready configuration for testing a REST API application",
+  "applicationType": "rest-api",
+  "config": {
+    "projectName": "ecommerce-api-test",
+    "targetUrl": "https://api.ecommerce.example.com",
+    "targetPort": 443,
+    "authType": "bearer",
+    "authToken": "your_jwt_token_here",
+    "agentCount": 50,
+    "testDuration": 15,
+    "testGoal": "Simulate realistic e-commerce user journeys including browsing products, adding to cart, and completing purchases",
+    "endpoints": [
+      "/api/v1/health",
+      "/api/v1/auth/login",
+      "/api/v1/auth/logout",
+      "/api/v1/products",
+      "/api/v1/products/{id}",
+      "/api/v1/cart",
+      "/api/v1/cart/items",
+      "/api/v1/orders",
+      "/api/v1/orders/{id}",
+      "/api/v1/users/profile",
+      "/api/v1/users/addresses"
+    ],
+    "customHeaders": {
       "Content-Type": "application/json",
       "Accept": "application/json",
-      "User-Agent": "APE-LoadTest/1.0"
+      "User-Agent": "APE-LoadTest/1.0",
+      "X-Client-Version": "1.0.0"
     }
   },
-  "agents": {
-    "count": 100,
-    "rampUp": "3m",
-    "goals": [
-      "Register new user account and verify email",
-      "Browse product catalog and search for items",
-      "Add multiple items to shopping cart",
-      "Apply discount codes and calculate totals",
-      "Complete checkout process with payment",
-      "View order history and track shipments",
-      "Update user profile and preferences",
-      "Leave product reviews and ratings"
+  "expectedBehavior": {
+    "authentication": "Bearer token authentication with JWT",
+    "sessionManagement": "Stateless API with token-based authentication",
+    "typicalUserFlow": [
+      "Login to get JWT token",
+      "Browse product catalog",
+      "Search for specific products",
+      "Add products to cart",
+      "Update cart quantities",
+      "Proceed to checkout",
+      "Complete order",
+      "View order history"
     ],
-    "sessionDuration": "10m",
-    "thinkTime": {
-      "min": 1,
-      "max": 5
+    "performanceTargets": {
+      "averageResponseTime": "< 200ms",
+      "p95ResponseTime": "< 500ms",
+      "errorRate": "< 1%",
+      "throughput": "1000+ requests/minute"
     }
   },
-  "test": {
-    "duration": "30m",
-    "warmup": "2m",
-    "cooldown": "1m"
-  },
-  "validation": {
-    "successCriteria": {
-      "successfulSessions": 85,
-      "errorRate": 5,
-      "avgResponseTime": 2000
-    },
-    "endpoints": [
-      {
-        "path": "/products",
-        "method": "GET",
-        "expectedStatus": 200,
-        "maxResponseTime": 1000
-      },
-      {
-        "path": "/cart",
-        "method": "POST",
-        "expectedStatus": 201,
-        "maxResponseTime": 500
-      },
-      {
-        "path": "/orders",
-        "method": "POST",
-        "expectedStatus": 201,
-        "maxResponseTime": 3000
-      }
-    ]
-  },
-  "cerebras": {
-    "model": "llama3.1-8b",
-    "temperature": 0.7,
-    "maxTokens": 1000,
-    "systemPrompt": "You are simulating a realistic e-commerce customer. Make decisions based on typical shopping behavior patterns. Maintain session state and adapt to application responses."
+  "recommendations": {
+    "agentScaling": "Start with 10-20 agents, scale up to 100+ for stress testing",
+    "testDuration": "Run for 10-30 minutes for meaningful results",
+    "monitoring": "Focus on API response times, error rates, and database performance",
+    "endpoints": "Include both read-heavy (product browsing) and write-heavy (order creation) operations"
   }
 }

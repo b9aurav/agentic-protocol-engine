@@ -1,342 +1,243 @@
-/**
- * Performance validation command for APE CLI
- * Implements task 10.2: Validate performance targets and KPIs
- */
-
-import { Command } from 'commander';
 import chalk from 'chalk';
-import { spawn } from 'child_process';
+import * as fs from 'fs-extra';
 import * as path from 'path';
-import * as fs from 'fs';
-import ora from 'ora';
+import { 
+  validateConfiguration, 
+  validateMCPConfiguration, 
+  validateProjectStructure,
+  formatValidationResults,
+  ConfigValidationResult
+} from '../utils/config-validator';
+import { SetupAnswers } from './setup';
+import { MCPGatewayConfig } from '../templates/mcp-gateway';
+import { ApplicationType } from '../templates/application-types';
 
-interface ValidationOptions {
-  maxAgents?: string;
-  testDuration?: string;
-  skipOptimization?: boolean;
-  output?: string;
+interface ValidateOptions {
+  config?: string;
+  mcp?: string;
   project?: string;
-  quick?: boolean;
+  fix?: boolean;
+  verbose?: boolean;
 }
 
-export function createValidateCommand(): Command {
-  const validateCmd = new Command('validate');
-  
-  validateCmd
-    .description('Validate performance targets and KPIs')
-    .option('-a, --max-agents <number>', 'Maximum number of agents to test', '1000')
-    .option('-d, --test-duration <minutes>', 'Test duration in minutes', '30')
-    .option('--skip-optimization', 'Skip KPI optimization analysis')
-    .option('-o, --output <file>', 'Output file for validation report')
-    .option('-p, --project <name>', 'Project name', 'ape')
-    .option('-q, --quick', 'Run quick validation (reduced scope)')
-    .action(validateCommand);
-  
-  return validateCmd;
-}
+export async function validateCommand(options: ValidateOptions = {}): Promise<void> {
+  console.log(chalk.blue('🔍 APE Configuration Validator'));
+  console.log(chalk.gray('Validating your APE configuration for production readiness...\n'));
 
-export async function validateCommand(options: ValidationOptions): Promise<void> {
-  console.log(chalk.blue.bold('\n🚀 APE Performance Validation\n'));
-  
+  let hasErrors = false;
+
   try {
-    // Adjust parameters for quick validation
-    if (options.quick) {
-      options.maxAgents = '100';
-      options.testDuration = '10';
-      options.skipOptimization = true;
-      console.log(chalk.yellow('⚡ Quick validation mode enabled (reduced scope)\n'));
+    // Validate project structure if project path is provided
+    if (options.project) {
+      console.log(chalk.cyan('📁 Validating project structure...'));
+      const projectResult = await validateProjectStructure(options.project);
+      displayValidationResult('Project Structure', projectResult);
+      if (!projectResult.valid) hasErrors = true;
     }
-    
-    // Check prerequisites
-    await checkPrerequisites();
-    
-    // Determine script path
-    const scriptPath = path.join(process.cwd(), 'scripts', 'run-performance-tests.py');
-    
-    if (!fs.existsSync(scriptPath)) {
-      throw new Error(`Performance validation script not found: ${scriptPath}`);
+
+    // Validate main configuration file
+    if (options.config) {
+      console.log(chalk.cyan('⚙️  Validating main configuration...'));
+      const configResult = await validateConfigFile(options.config);
+      displayValidationResult('Main Configuration', configResult);
+      if (!configResult.valid) hasErrors = true;
     }
-    
-    // Prepare command arguments
-    const args = [
-      scriptPath,
-      '--max-agents', options.maxAgents || '1000',
-      '--test-duration', options.testDuration || '30',
-      '--project', options.project || 'ape'
-    ];
-    
-    if (options.skipOptimization) {
-      args.push('--skip-optimization');
+
+    // Validate MCP Gateway configuration
+    if (options.mcp) {
+      console.log(chalk.cyan('🌐 Validating MCP Gateway configuration...'));
+      const mcpResult = await validateMCPConfigFile(options.mcp);
+      displayValidationResult('MCP Gateway Configuration', mcpResult);
+      if (!mcpResult.valid) hasErrors = true;
     }
-    
-    if (options.output) {
-      args.push('--output', options.output);
+
+    // Auto-detect and validate if no specific files provided
+    if (!options.config && !options.mcp && !options.project) {
+      console.log(chalk.cyan('🔍 Auto-detecting configuration files...'));
+      await autoValidateCurrentDirectory(options);
     }
-    
-    // Start validation
-    const spinner = ora('Initializing performance validation...').start();
-    
-    console.log(chalk.gray(`Running: python ${args.join(' ')}\n`));
-    
-    const validationProcess = spawn('python', args, {
-      stdio: ['inherit', 'pipe', 'pipe'],
-      cwd: process.cwd()
-    });
-    
-    let stdout = '';
-    let stderr = '';
-    
-    validationProcess.stdout?.on('data', (data) => {
-      const output = data.toString();
-      stdout += output;
-      
-      // Update spinner with progress information
-      if (output.includes('Starting comprehensive performance test suite')) {
-        spinner.text = 'Starting comprehensive performance test suite...';
-      } else if (output.includes('Performing pre-test system checks')) {
-        spinner.text = 'Performing pre-test system checks...';
-      } else if (output.includes('Running performance validation tests')) {
-        spinner.text = 'Running performance validation tests...';
-      } else if (output.includes('Testing scaling to')) {
-        const match = output.match(/Testing scaling to (\d+) agents/);
-        if (match) {
-          spinner.text = `Testing scaling to ${match[1]} agents...`;
-        }
-      } else if (output.includes('Validating sustained load performance')) {
-        spinner.text = 'Validating sustained load performance...';
-      } else if (output.includes('Running KPI optimization analysis')) {
-        spinner.text = 'Running KPI optimization analysis...';
-      } else if (output.includes('Comprehensive performance tests completed')) {
-        spinner.text = 'Finalizing test results...';
-      }
-      
-      // Print real-time output for important messages
-      if (output.includes('✅') || output.includes('❌') || output.includes('⚠️')) {
-        spinner.stop();
-        console.log(output.trim());
-        spinner.start();
-      }
-    });
-    
-    validationProcess.stderr?.on('data', (data) => {
-      stderr += data.toString();
-    });
-    
-    const exitCode = await new Promise<number>((resolve) => {
-      validationProcess.on('close', resolve);
-    });
-    
-    spinner.stop();
-    
-    if (exitCode === 0) {
-      console.log(chalk.green.bold('\n✅ Performance validation completed successfully!\n'));
-      
-      // Parse and display summary from stdout
-      displayValidationSummary(stdout);
-      
-      if (options.output) {
-        console.log(chalk.blue(`📄 Detailed report saved to: ${options.output}\n`));
-      }
-      
-    } else {
-      console.log(chalk.red.bold('\n❌ Performance validation failed!\n'));
-      
-      if (stderr) {
-        console.log(chalk.red('Error details:'));
-        console.log(stderr);
-      }
-      
-      // Still try to display any summary information
-      if (stdout) {
-        displayValidationSummary(stdout);
-      }
-      
+
+    // Summary
+    console.log(chalk.blue('\n📊 Validation Summary'));
+    if (hasErrors) {
+      console.log(chalk.red('❌ Configuration validation failed'));
+      console.log(chalk.yellow('💡 Fix the errors above before deploying to production'));
       process.exit(1);
+    } else {
+      console.log(chalk.green('✅ All validations passed'));
+      console.log(chalk.gray('Your configuration is ready for production deployment'));
     }
-    
+
   } catch (error) {
-    console.error(chalk.red.bold('\n❌ Performance validation failed:'));
-    console.error(chalk.red(error instanceof Error ? error.message : String(error)));
+    console.error(chalk.red(`Validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`));
     process.exit(1);
   }
 }
 
-async function checkPrerequisites(): Promise<void> {
-  const spinner = ora('Checking prerequisites...').start();
+async function validateConfigFile(configPath: string): Promise<ConfigValidationResult> {
+  try {
+    if (!await fs.pathExists(configPath)) {
+      return {
+        valid: false,
+        errors: [{ field: 'file', message: `Configuration file not found: ${configPath}`, code: 'FILE_NOT_FOUND', severity: 'error' }],
+        warnings: [],
+        suggestions: []
+      };
+    }
+
+    const configContent = await fs.readJSON(configPath);
+    
+    // Convert config to SetupAnswers format for validation
+    const setupAnswers: SetupAnswers = {
+      projectName: configContent.project?.name || 'unknown',
+      targetUrl: configContent.target?.url || '',
+      targetPort: configContent.target?.port || 80,
+      authType: configContent.target?.auth?.type || 'none',
+      authToken: configContent.target?.auth?.token,
+      authUsername: configContent.target?.auth?.username,
+      authPassword: configContent.target?.auth?.password,
+      agentCount: configContent.agents?.count || 1,
+      testDuration: configContent.test?.duration || 5,
+      testGoal: configContent.agents?.goal || '',
+      endpoints: configContent.target?.endpoints || [],
+      customHeaders: configContent.target?.headers || {},
+      applicationType: configContent.applicationType as ApplicationType
+    };
+
+    return validateConfiguration(setupAnswers, setupAnswers.applicationType);
+
+  } catch (error) {
+    return {
+      valid: false,
+      errors: [{ 
+        field: 'file', 
+        message: `Error reading configuration file: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+        code: 'FILE_READ_ERROR', 
+        severity: 'error' 
+      }],
+      warnings: [],
+      suggestions: []
+    };
+  }
+}
+
+async function validateMCPConfigFile(mcpConfigPath: string): Promise<ConfigValidationResult> {
+  try {
+    if (!await fs.pathExists(mcpConfigPath)) {
+      return {
+        valid: false,
+        errors: [{ field: 'file', message: `MCP configuration file not found: ${mcpConfigPath}`, code: 'FILE_NOT_FOUND', severity: 'error' }],
+        warnings: [],
+        suggestions: []
+      };
+    }
+
+    const mcpConfig: MCPGatewayConfig = await fs.readJSON(mcpConfigPath);
+    return validateMCPConfiguration(mcpConfig);
+
+  } catch (error) {
+    return {
+      valid: false,
+      errors: [{ 
+        field: 'file', 
+        message: `Error reading MCP configuration file: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+        code: 'FILE_READ_ERROR', 
+        severity: 'error' 
+      }],
+      warnings: [],
+      suggestions: []
+    };
+  }
+}
+
+async function autoValidateCurrentDirectory(options: ValidateOptions): Promise<void> {
+  const currentDir = process.cwd();
   
-  try {
-    // Check if Python is available
-    await new Promise<void>((resolve, reject) => {
-      const pythonCheck = spawn('python', ['--version'], { stdio: 'pipe' });
-      pythonCheck.on('close', (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error('Python is not available. Please install Python 3.7+'));
-        }
-      });
-      pythonCheck.on('error', () => {
-        reject(new Error('Python is not available. Please install Python 3.7+'));
-      });
-    });
-    
-    // Check if Docker is available
-    await new Promise<void>((resolve, reject) => {
-      const dockerCheck = spawn('docker', ['--version'], { stdio: 'pipe' });
-      dockerCheck.on('close', (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error('Docker is not available. Please install Docker'));
-        }
-      });
-      dockerCheck.on('error', () => {
-        reject(new Error('Docker is not available. Please install Docker'));
-      });
-    });
-    
-    // Check if compose file exists
-    const composeFile = path.join(process.cwd(), 'ape.docker-compose.yml');
-    if (!fs.existsSync(composeFile)) {
-      throw new Error('Docker Compose file not found. Please run setup first.');
-    }
-    
-    spinner.succeed('Prerequisites check passed');
-    
-  } catch (error) {
-    spinner.fail('Prerequisites check failed');
-    throw error;
-  }
-}
+  // Check for common APE configuration files
+  const configFiles = [
+    { path: 'ape.config.json', type: 'main' },
+    { path: 'ape.mcp-gateway.json', type: 'mcp' },
+    { path: '.', type: 'project' }
+  ];
 
-function displayValidationSummary(stdout: string): void {
-  try {
-    // Extract summary information from stdout
-    const lines = stdout.split('\n');
+  let foundFiles = false;
+
+  for (const configFile of configFiles) {
+    const fullPath = path.join(currentDir, configFile.path);
     
-    let inSummarySection = false;
-    let summaryLines: string[] = [];
-    
-    for (const line of lines) {
-      if (line.includes('APE COMPREHENSIVE PERFORMANCE TEST RESULTS')) {
-        inSummarySection = true;
-        continue;
-      }
+    if (configFile.type === 'project' || await fs.pathExists(fullPath)) {
+      foundFiles = true;
       
-      if (inSummarySection) {
-        if (line.includes('='.repeat(50)) && summaryLines.length > 0) {
-          break; // End of summary section
-        }
-        
-        if (line.trim()) {
-          summaryLines.push(line);
-        }
-      }
-    }
-    
-    if (summaryLines.length > 0) {
-      console.log(chalk.cyan.bold('📊 Validation Summary:'));
-      summaryLines.forEach(line => {
-        if (line.includes('Overall Status:')) {
-          if (line.includes('PASS')) {
-            console.log(chalk.green(line));
-          } else {
-            console.log(chalk.red(line));
-          }
-        } else if (line.includes('✅')) {
-          console.log(chalk.green(line));
-        } else if (line.includes('❌')) {
-          console.log(chalk.red(line));
-        } else if (line.includes('⚠️')) {
-          console.log(chalk.yellow(line));
-        } else {
-          console.log(line);
-        }
-      });
-      console.log();
-    }
-    
-    // Extract and display next steps
-    let inNextStepsSection = false;
-    let nextStepsLines: string[] = [];
-    
-    for (const line of lines) {
-      if (line.includes('📋 Next Steps:')) {
-        inNextStepsSection = true;
-        continue;
-      }
+      console.log(chalk.gray(`Found ${configFile.type} configuration: ${configFile.path}`));
       
-      if (inNextStepsSection) {
-        if (line.includes('='.repeat(50))) {
+      let result: ConfigValidationResult;
+      
+      switch (configFile.type) {
+        case 'main':
+          result = await validateConfigFile(fullPath);
+          displayValidationResult('Main Configuration', result);
           break;
-        }
-        
-        if (line.trim() && line.includes('   ')) {
-          nextStepsLines.push(line.trim());
-        }
+        case 'mcp':
+          result = await validateMCPConfigFile(fullPath);
+          displayValidationResult('MCP Gateway Configuration', result);
+          break;
+        case 'project':
+          result = await validateProjectStructure(currentDir);
+          displayValidationResult('Project Structure', result);
+          break;
       }
     }
-    
-    if (nextStepsLines.length > 0) {
-      console.log(chalk.cyan.bold('📋 Next Steps:'));
-      nextStepsLines.forEach(line => {
-        if (line.includes('✅')) {
-          console.log(chalk.green(`  ${line}`));
-        } else if (line.includes('❌')) {
-          console.log(chalk.red(`  ${line}`));
-        } else if (line.includes('🚨')) {
-          console.log(chalk.red.bold(`  ${line}`));
-        } else {
-          console.log(chalk.blue(`  ${line}`));
-        }
-      });
-      console.log();
-    }
-    
-  } catch (error) {
-    // If parsing fails, just show the raw output
-    console.log(chalk.gray('Raw validation output:'));
-    console.log(stdout);
+  }
+
+  if (!foundFiles) {
+    console.log(chalk.yellow('⚠️  No APE configuration files found in current directory'));
+    console.log(chalk.gray('Run "ape-test setup" to create a new configuration'));
   }
 }
 
-// Additional utility functions for validation
-export async function quickValidate(): Promise<boolean> {
-  try {
-    await validateCommand({ 
-      quick: true,
-      maxAgents: '50',
-      testDuration: '5',
-      skipOptimization: true
+function displayValidationResult(title: string, result: ConfigValidationResult): void {
+  console.log(chalk.bold(`\n${title}:`));
+  
+  if (result.valid) {
+    console.log(chalk.green('  ✅ Valid'));
+  } else {
+    console.log(chalk.red('  ❌ Invalid'));
+  }
+
+  // Display errors
+  if (result.errors.length > 0) {
+    console.log(chalk.red('\n  🚨 Errors:'));
+    result.errors.forEach(error => {
+      console.log(chalk.red(`    • ${error.field}: ${error.message}`));
+      if (error.code) {
+        console.log(chalk.gray(`      Code: ${error.code}`));
+      }
     });
-    return true;
-  } catch {
-    return false;
+  }
+
+  // Display warnings
+  if (result.warnings.length > 0) {
+    console.log(chalk.yellow('\n  ⚠️  Warnings:'));
+    result.warnings.forEach(warning => {
+      console.log(chalk.yellow(`    • ${warning.field}: ${warning.message}`));
+      if (warning.suggestion) {
+        console.log(chalk.gray(`      💡 ${warning.suggestion}`));
+      }
+    });
+  }
+
+  // Display suggestions
+  if (result.suggestions.length > 0) {
+    console.log(chalk.cyan('\n  💡 Suggestions:'));
+    result.suggestions.forEach(suggestion => {
+      console.log(chalk.cyan(`    • ${suggestion.field}: ${suggestion.message}`));
+      console.log(chalk.gray(`      Reason: ${suggestion.reason}`));
+      if (suggestion.suggestedValue !== undefined) {
+        console.log(chalk.gray(`      Suggested: ${JSON.stringify(suggestion.suggestedValue)}`));
+      }
+    });
   }
 }
 
-export async function validateScaling(maxAgents: number): Promise<boolean> {
-  try {
-    await validateCommand({
-      maxAgents: maxAgents.toString(),
-      testDuration: '15',
-      skipOptimization: true
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function validateKPIs(): Promise<boolean> {
-  try {
-    await validateCommand({
-      maxAgents: '100',
-      testDuration: '20',
-      skipOptimization: false
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
+// Export validation utilities for use in other commands
+export { validateConfiguration, validateMCPConfiguration, validateProjectStructure, formatValidationResults };

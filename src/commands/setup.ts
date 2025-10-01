@@ -7,11 +7,24 @@ import * as yaml from 'yaml';
 import { generateDockerCompose, generatePrometheusConfig, generatePromtailConfig } from '../templates/docker-compose';
 import { generateProductionOverride, generateProductionEnv } from '../templates/docker-compose.production';
 import { generateMCPGatewayConfig } from '../templates/mcp-gateway';
+import { 
+  ApplicationType, 
+  APPLICATION_TEMPLATES, 
+  generateApplicationSpecificConfig,
+  generateApplicationDockerOverride
+} from '../templates/application-types';
+import { 
+  ConfigValidator, 
+  validateConfiguration, 
+  formatValidationResults 
+} from '../utils/config-validator';
 
 interface SetupOptions {
   template: string;
   yes?: boolean;
   output: string;
+  applicationType?: ApplicationType;
+  validate?: boolean;
 }
 
 export interface SetupAnswers {
@@ -27,11 +40,21 @@ export interface SetupAnswers {
   testGoal: string;
   endpoints: string[];
   customHeaders: Record<string, string>;
+  applicationType?: ApplicationType;
 }
 
 export async function setupWizard(projectName?: string, options?: SetupOptions): Promise<void> {
   console.log(chalk.blue('🤖 Welcome to APE Setup Wizard!'));
   console.log(chalk.gray('This wizard will help you configure your AI-driven load test.\n'));
+
+  // Show available application templates
+  if (!options?.yes) {
+    console.log(chalk.cyan('📋 Available Application Templates:'));
+    Object.values(APPLICATION_TEMPLATES).forEach(template => {
+      console.log(chalk.gray(`  • ${template.name}: ${template.description}`));
+    });
+    console.log();
+  }
 
   try {
     let answers: SetupAnswers;
@@ -47,10 +70,32 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
         testDuration: 5,
         testGoal: 'Simulate realistic user browsing and interaction patterns',
         endpoints: ['/api/health', '/api/users'],
-        customHeaders: {}
+        customHeaders: {},
+        applicationType: options.applicationType || 'rest-api'
       };
     } else {
       // Interactive prompts - Requirements 5.1, 5.2
+      
+      // First, ask for application type to customize subsequent prompts
+      const appTypeAnswer = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'applicationType',
+          message: 'What type of application are you testing?',
+          choices: Object.values(APPLICATION_TEMPLATES).map(template => ({
+            name: `${template.name} - ${template.description}`,
+            value: template.type
+          })),
+          default: options?.applicationType || 'rest-api'
+        }
+      ]);
+
+      const selectedTemplate = APPLICATION_TEMPLATES[appTypeAnswer.applicationType as ApplicationType];
+      
+      console.log(chalk.green(`\n✨ Selected: ${selectedTemplate.name}`));
+      console.log(chalk.gray(`Default endpoints: ${selectedTemplate.defaultEndpoints.join(', ')}`));
+      console.log(chalk.gray(`Supported auth types: ${selectedTemplate.authTypes.join(', ')}\n`));
+
       const basicAnswers = await inquirer.prompt([
         {
           type: 'input',
@@ -103,13 +148,23 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
           type: 'list',
           name: 'authType',
           message: 'Authentication type:',
-          choices: [
-            { name: 'None (public endpoints)', value: 'none' },
-            { name: 'Bearer Token (JWT/API Key)', value: 'bearer' },
-            { name: 'Basic Authentication', value: 'basic' },
-            { name: 'Session Cookies (login flow)', value: 'session' }
-          ],
-          default: 'none'
+          choices: selectedTemplate.authTypes.map(authType => {
+            const authLabels: Record<string, string> = {
+              'none': 'None (public endpoints)',
+              'bearer': 'Bearer Token (JWT/API Key)',
+              'basic': 'Basic Authentication',
+              'session': 'Session Cookies (login flow)',
+              'api-key': 'API Key (X-API-Key header)',
+              'oauth2': 'OAuth 2.0',
+              'mutual-tls': 'Mutual TLS',
+              'service-mesh': 'Service Mesh Authentication'
+            };
+            return {
+              name: authLabels[authType] || authType,
+              value: authType
+            };
+          }),
+          default: selectedTemplate.authTypes.includes('none') ? 'none' : selectedTemplate.authTypes[0]
         }
       ]);
 
@@ -190,8 +245,8 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
         {
           type: 'input',
           name: 'endpoints',
-          message: 'API endpoints to test (comma-separated, e.g., /api/users,/api/products):',
-          default: '/api/health,/api/users',
+          message: `API endpoints to test (comma-separated, defaults available for ${selectedTemplate.name}):`,
+          default: selectedTemplate.defaultEndpoints.join(','),
           validate: (input: string | string[]) => {
             let endpoints: string[];
             if (Array.isArray(input)) {
@@ -267,8 +322,53 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
         ...authAnswers,
         ...testAnswers,
         ...endpointAnswers,
-        customHeaders
+        customHeaders,
+        applicationType: appTypeAnswer.applicationType
       };
+    }
+
+    // Validate configuration before generating files - Requirements 8.4
+    if (options?.validate !== false) {
+      console.log(chalk.blue('\n🔍 Validating configuration...'));
+      const validationResult = validateConfiguration(answers, answers.applicationType);
+      
+      if (!validationResult.valid) {
+        console.log(chalk.red('\n❌ Configuration validation failed:'));
+        console.log(formatValidationResults(validationResult));
+        
+        const continueAnswer = await inquirer.prompt([
+          {
+            type: 'confirm',
+            name: 'continue',
+            message: 'Continue with invalid configuration?',
+            default: false
+          }
+        ]);
+        
+        if (!continueAnswer.continue) {
+          console.log(chalk.yellow('Setup cancelled. Please fix the configuration issues and try again.'));
+          return;
+        }
+      } else if (validationResult.warnings.length > 0 || validationResult.suggestions.length > 0) {
+        console.log(chalk.yellow('\n⚠️  Configuration has warnings or suggestions:'));
+        console.log(formatValidationResults(validationResult));
+        
+        const continueAnswer = await inquirer.prompt([
+          {
+            type: 'confirm',
+            name: 'continue',
+            message: 'Continue with this configuration?',
+            default: true
+          }
+        ]);
+        
+        if (!continueAnswer.continue) {
+          console.log(chalk.yellow('Setup cancelled.'));
+          return;
+        }
+      } else {
+        console.log(chalk.green('✅ Configuration validation passed'));
+      }
     }
 
     const spinner = ora('Generating configuration files...').start();
@@ -454,8 +554,19 @@ CEREBRAS_API_KEY=your_cerebras_api_key_here
   await fs.writeFile(path.join(projectPath, '.env.template'), envTemplate);
 
   // Generate MCP Gateway routing configuration - Requirements 3.3, 3.4, 5.4
-  const mcpGatewayConfig = generateMCPGatewayConfig(config);
+  const mcpGatewayConfig = config.applicationType 
+    ? generateApplicationSpecificConfig(config, config.applicationType)
+    : generateMCPGatewayConfig(config);
   await fs.writeJSON(path.join(projectPath, 'ape.mcp-gateway.json'), mcpGatewayConfig, { spaces: 2 });
+
+  // Generate application-specific Docker Compose override if applicable
+  if (config.applicationType && config.applicationType !== 'custom') {
+    const appDockerOverride = generateApplicationDockerOverride(config, config.applicationType);
+    await fs.writeFile(
+      path.join(projectPath, `ape.docker-compose.${config.applicationType}.yml`),
+      yaml.stringify(appDockerOverride)
+    );
+  }
 
   // Create comprehensive README with instructions
   const readme = `# ${config.projectName}

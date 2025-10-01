@@ -1,194 +1,150 @@
 {
-  "name": "Microservices Architecture Load Test",
-  "description": "Load test for a distributed microservices architecture with service mesh and API gateway",
-  "target": {
-    "name": "microservices-platform",
-    "baseUrl": "https://api-gateway.example.com",
-    "authentication": {
-      "type": "jwt",
-      "loginEndpoint": "/auth/v1/login",
-      "credentials": {
-        "username": "service-test-user",
-        "password": "microservices-test-123"
-      },
-      "tokenField": "access_token",
-      "refreshEndpoint": "/auth/v1/refresh"
-    },
-    "headers": {
+  "name": "Microservices Load Test Example",
+  "description": "Production-ready configuration for testing a microservices architecture",
+  "applicationType": "microservices",
+  "config": {
+    "projectName": "banking-microservices-test",
+    "targetUrl": "https://api-gateway.banking.example.com",
+    "targetPort": 443,
+    "authType": "bearer",
+    "authToken": "your_service_mesh_token_here",
+    "agentCount": 75,
+    "testDuration": 30,
+    "testGoal": "Simulate comprehensive banking operations across multiple microservices including account management, transactions, payments, and notifications with realistic cross-service dependencies",
+    "endpoints": [
+      "/api/gateway/health",
+      "/api/auth-service/login",
+      "/api/auth-service/refresh",
+      "/api/user-service/profile",
+      "/api/account-service/accounts",
+      "/api/account-service/accounts/{id}/balance",
+      "/api/transaction-service/transactions",
+      "/api/transaction-service/transfer",
+      "/api/payment-service/payments",
+      "/api/payment-service/payments/{id}/status",
+      "/api/notification-service/notifications",
+      "/api/audit-service/logs"
+    ],
+    "customHeaders": {
       "Content-Type": "application/json",
       "Accept": "application/json",
-      "X-Client-Version": "1.0.0",
-      "X-Request-ID": "dynamic"
+      "User-Agent": "APE-LoadTest/1.0",
+      "X-Service-Name": "ape-load-test",
+      "X-Request-ID": "auto-generated",
+      "X-Correlation-ID": "auto-generated"
     }
   },
-  "services": [
-    {
-      "name": "user-service",
-      "basePath": "/users/v1",
-      "endpoints": [
-        {"path": "/profile", "method": "GET"},
-        {"path": "/profile", "method": "PUT"},
-        {"path": "/preferences", "method": "GET"},
-        {"path": "/preferences", "method": "POST"}
-      ]
-    },
-    {
-      "name": "product-service", 
-      "basePath": "/products/v1",
-      "endpoints": [
-        {"path": "/catalog", "method": "GET"},
-        {"path": "/search", "method": "POST"},
-        {"path": "/recommendations", "method": "GET"},
-        {"path": "/reviews", "method": "POST"}
-      ]
-    },
-    {
-      "name": "order-service",
-      "basePath": "/orders/v1", 
-      "endpoints": [
-        {"path": "/cart", "method": "GET"},
-        {"path": "/cart/items", "method": "POST"},
-        {"path": "/checkout", "method": "POST"},
-        {"path": "/history", "method": "GET"}
-      ]
-    },
-    {
-      "name": "payment-service",
-      "basePath": "/payments/v1",
-      "endpoints": [
-        {"path": "/methods", "method": "GET"},
-        {"path": "/process", "method": "POST"},
-        {"path": "/refund", "method": "POST"}
-      ]
-    }
-  ],
-  "agents": {
-    "count": 150,
-    "rampUp": "5m",
-    "goals": [
-      "Complete end-to-end user registration and profile setup",
-      "Browse product catalog across multiple categories",
-      "Perform complex product searches with filters",
-      "Add multiple items to cart from different services",
-      "Complete checkout with payment processing",
-      "View order history and track shipments",
-      "Leave reviews and ratings for purchased products",
-      "Update user preferences and notification settings"
-    ],
-    "sessionDuration": "12m",
-    "thinkTime": {
-      "min": 1,
-      "max": 4
-    },
-    "distribution": {
-      "newUsers": 30,
-      "returningUsers": 70
-    }
-  },
-  "test": {
-    "duration": "45m",
-    "warmup": "3m",
-    "cooldown": "2m",
-    "phases": [
-      {"duration": "10m", "agents": 50, "description": "Initial ramp-up"},
-      {"duration": "20m", "agents": 150, "description": "Peak load"},
-      {"duration": "10m", "agents": 100, "description": "Sustained load"},
-      {"duration": "5m", "agents": 25, "description": "Cool-down"}
-    ]
-  },
-  "serviceDiscovery": {
-    "enabled": true,
-    "registry": "consul",
-    "healthChecks": true,
-    "circuitBreaker": {
-      "enabled": true,
-      "failureThreshold": 5,
-      "timeout": 30000
-    }
-  },
-  "tracing": {
-    "enabled": true,
-    "jaeger": {
-      "endpoint": "http://jaeger:14268/api/traces",
-      "serviceName": "ape-load-test"
-    },
-    "propagation": ["tracecontext", "baggage", "b3"]
-  },
-  "validation": {
-    "successCriteria": {
-      "successfulSessions": 85,
-      "errorRate": 5,
-      "avgResponseTime": 1500,
-      "serviceAvailability": 99.5
-    },
-    "serviceEndpoints": [
+  "microservicesArchitecture": {
+    "services": [
       {
-        "service": "user-service",
-        "path": "/profile",
-        "maxResponseTime": 500,
-        "expectedStatus": 200
+        "name": "auth-service",
+        "description": "Authentication and authorization service",
+        "endpoints": ["/api/auth-service/login", "/api/auth-service/refresh", "/api/auth-service/logout"],
+        "dependencies": ["user-service"],
+        "expectedLatency": "< 100ms",
+        "criticalPath": true
       },
       {
-        "service": "product-service",
-        "path": "/catalog",
-        "maxResponseTime": 800,
-        "expectedStatus": 200
+        "name": "user-service",
+        "description": "User profile and management service",
+        "endpoints": ["/api/user-service/profile", "/api/user-service/preferences"],
+        "dependencies": [],
+        "expectedLatency": "< 150ms",
+        "criticalPath": true
       },
       {
-        "service": "order-service", 
-        "path": "/checkout",
-        "maxResponseTime": 2000,
-        "expectedStatus": 201
+        "name": "account-service",
+        "description": "Account and balance management service",
+        "endpoints": ["/api/account-service/accounts", "/api/account-service/accounts/{id}/balance"],
+        "dependencies": ["user-service", "audit-service"],
+        "expectedLatency": "< 200ms",
+        "criticalPath": true
       },
       {
-        "service": "payment-service",
-        "path": "/process",
-        "maxResponseTime": 3000,
-        "expectedStatus": 200
+        "name": "transaction-service",
+        "description": "Transaction processing and history service",
+        "endpoints": ["/api/transaction-service/transactions", "/api/transaction-service/transfer"],
+        "dependencies": ["account-service", "payment-service", "notification-service", "audit-service"],
+        "expectedLatency": "< 500ms",
+        "criticalPath": true
+      },
+      {
+        "name": "payment-service",
+        "description": "External payment processing service",
+        "endpoints": ["/api/payment-service/payments", "/api/payment-service/payments/{id}/status"],
+        "dependencies": ["audit-service"],
+        "expectedLatency": "< 1000ms",
+        "criticalPath": false
+      },
+      {
+        "name": "notification-service",
+        "description": "User notification and messaging service",
+        "endpoints": ["/api/notification-service/notifications"],
+        "dependencies": [],
+        "expectedLatency": "< 300ms",
+        "criticalPath": false
+      },
+      {
+        "name": "audit-service",
+        "description": "Audit logging and compliance service",
+        "endpoints": ["/api/audit-service/logs"],
+        "dependencies": [],
+        "expectedLatency": "< 100ms",
+        "criticalPath": false
       }
     ],
-    "crossServiceValidation": [
-      {
-        "name": "Order-Payment Consistency",
-        "description": "Verify order totals match payment amounts",
-        "services": ["order-service", "payment-service"]
-      },
-      {
-        "name": "User-Product Recommendations",
-        "description": "Validate personalized recommendations",
-        "services": ["user-service", "product-service"]
-      }
-    ]
+    "serviceDiscovery": "Consul/Eureka",
+    "loadBalancer": "NGINX/HAProxy",
+    "circuitBreaker": "Hystrix/Resilience4j",
+    "messageBroker": "RabbitMQ/Apache Kafka"
   },
-  "monitoring": {
-    "metrics": {
-      "serviceLatency": true,
-      "errorRates": true,
-      "throughput": true,
-      "resourceUsage": true
+  "expectedBehavior": {
+    "authentication": "Service mesh authentication with JWT tokens and mTLS",
+    "sessionManagement": "Distributed sessions with Redis/Hazelcast",
+    "typicalUserFlow": [
+      "Authenticate through auth-service",
+      "Fetch user profile from user-service",
+      "Load account information from account-service",
+      "Check account balances and transaction history",
+      "Initiate money transfer between accounts",
+      "Process payment through payment-service",
+      "Receive notifications about transaction status",
+      "View audit logs for compliance"
+    ],
+    "performanceTargets": {
+      "averageResponseTime": "< 300ms for critical path, < 1s for non-critical",
+      "p95ResponseTime": "< 800ms for critical path, < 2s for non-critical",
+      "errorRate": "< 0.1% for critical services, < 1% for non-critical",
+      "throughput": "2000+ requests/minute across all services"
+    }
+  },
+  "recommendations": {
+    "agentScaling": "Start with 20-30 agents, scale up to 100+ for stress testing distributed systems",
+    "testDuration": "Run for 20-60 minutes to test service resilience and auto-scaling",
+    "monitoring": "Focus on service-to-service latency, circuit breaker activation, and cascade failures",
+    "serviceIsolation": "Test individual service failures and recovery patterns",
+    "dataConsistency": "Verify eventual consistency and distributed transaction handling"
+  },
+  "microservicesSpecificConfig": {
+    "serviceDiscoveryEnabled": true,
+    "circuitBreakerEnabled": true,
+    "retryPolicyEnabled": true,
+    "bulkheadIsolation": true,
+    "distributedTracing": true,
+    "serviceTimeouts": {
+      "auth-service": 5000,
+      "user-service": 10000,
+      "account-service": 15000,
+      "transaction-service": 30000,
+      "payment-service": 60000,
+      "notification-service": 20000,
+      "audit-service": 5000
     },
-    "alerts": [
-      {
-        "name": "High Error Rate",
-        "condition": "error_rate > 10%",
-        "duration": "2m"
-      },
-      {
-        "name": "Service Unavailable", 
-        "condition": "availability < 95%",
-        "duration": "1m"
-      },
-      {
-        "name": "High Latency",
-        "condition": "p95_latency > 5000ms",
-        "duration": "3m"
-      }
-    ]
-  },
-  "cerebras": {
-    "model": "llama3.1-8b",
-    "temperature": 0.8,
-    "maxTokens": 1200,
-    "systemPrompt": "You are simulating a user interacting with a complex microservices platform. Navigate between different services naturally, maintain context across service boundaries, and handle service failures gracefully."
+    "circuitBreakerThresholds": {
+      "failureRate": 50,
+      "slowCallRate": 50,
+      "slowCallDuration": 2000,
+      "minimumNumberOfCalls": 10
+    }
   }
 }

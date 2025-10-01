@@ -1,380 +1,274 @@
-# APE Configuration Examples
+# APE Configuration Templates
 
-This directory contains example configurations for different types of applications and use cases. Each example demonstrates best practices and common patterns for load testing with APE.
+This directory contains production-ready configuration templates for different application types. These templates provide optimized settings, validation rules, and best practices for load testing various architectures.
 
-## Available Examples
+## Available Templates
 
-### 1. REST API Example (`rest-api-example.json`)
+### 1. REST API Template (`rest-api-example.json`)
 
-**Use Case**: E-commerce REST API with authentication and shopping workflows
+**Best for:** Traditional RESTful APIs with CRUD operations
 
-**Key Features**:
-- Bearer token authentication with refresh
-- Multi-step user journeys (browse → cart → checkout)
-- Validation rules for critical endpoints
-- Performance thresholds and success criteria
+**Features:**
+- Standard HTTP methods (GET, POST, PUT, DELETE)
+- Bearer token or basic authentication
+- Comprehensive endpoint coverage
+- Optimized for stateless operations
 
-**Best For**:
-- Traditional REST APIs
-- E-commerce platforms
-- CRUD applications
-- APIs with session management
+**Use Cases:**
+- E-commerce APIs
+- User management systems
+- Content management APIs
+- Microservice endpoints
 
-### 2. GraphQL Example (`graphql-example.json`)
+**Performance Targets:**
+- Average response time: < 200ms
+- P95 response time: < 500ms
+- Error rate: < 1%
+- Throughput: 1000+ requests/minute
 
-**Use Case**: Social media platform with GraphQL API
+### 2. GraphQL Template (`graphql-example.json`)
 
-**Key Features**:
-- JWT authentication
-- Complex queries and mutations
-- Dynamic variable handling
-- Schema introspection support
+**Best for:** GraphQL APIs with complex queries and mutations
 
-**Best For**:
-- GraphQL APIs
-- Social platforms
-- Content management systems
+**Features:**
+- Query complexity management
+- Introspection support
+- Batch operation handling
+- Performance optimization for complex queries
+
+**Use Cases:**
+- Social media platforms
+- Content aggregation services
 - Real-time applications
+- Mobile app backends
 
-### 3. Microservices Example (`microservices-example.json`)
+**Performance Targets:**
+- Simple queries: < 300ms average, < 800ms P95
+- Complex queries: < 1s average, < 2s P95
+- Error rate: < 0.5%
+- Throughput: 500+ operations/minute
 
-**Use Case**: Distributed microservices architecture with service mesh
+### 3. Microservices Template (`microservices-example.json`)
 
-**Key Features**:
-- Multiple service endpoints
+**Best for:** Distributed microservices architectures
+
+**Features:**
 - Service discovery integration
 - Circuit breaker patterns
-- Cross-service validation
 - Distributed tracing
+- Cross-service dependency testing
 
-**Best For**:
-- Microservices architectures
+**Use Cases:**
+- Banking and financial systems
+- Enterprise applications
+- Cloud-native architectures
 - Service mesh deployments
-- Complex distributed systems
-- API gateways
 
-## Using the Examples
+**Performance Targets:**
+- Critical path: < 300ms average, < 800ms P95
+- Non-critical: < 1s average, < 2s P95
+- Error rate: < 0.1% critical, < 1% non-critical
+- Throughput: 2000+ requests/minute
 
-### Quick Start with an Example
+## Quick Start
+
+### 1. Choose Your Template
 
 ```bash
-# Copy an example to your project
-cp examples/rest-api-example.json my-project/ape.config.json
+# Copy a template to get started
+cp examples/rest-api-example.json my-config.json
 
-# Customize the configuration
-nano my-project/ape.config.json
-
-# Run the test
-cd my-project
-ape-test start --config ape.config.json
+# Or use the setup wizard with a specific template
+npx create-ape-test --template rest-api
 ```
 
-### Customizing Examples
+### 2. Customize Configuration
 
-1. **Update target URL**: Change `baseUrl` to your application
-2. **Configure authentication**: Update credentials and endpoints
-3. **Adjust agent goals**: Modify to match your user journeys
-4. **Set performance thresholds**: Define success criteria
-5. **Customize monitoring**: Configure alerts and dashboards
+Edit the configuration file to match your application:
 
-## Configuration Patterns
-
-### Authentication Patterns
-
-#### API Key Authentication
 ```json
 {
-  "authentication": {
-    "type": "apikey",
-    "header": "X-API-Key",
-    "value": "your-api-key-here"
+  "config": {
+    "projectName": "my-api-test",
+    "targetUrl": "https://api.myapp.com",
+    "authType": "bearer",
+    "authToken": "your_token_here",
+    "agentCount": 25,
+    "testDuration": 15,
+    "endpoints": ["/api/users", "/api/products"]
   }
 }
 ```
 
-#### OAuth2 Flow
-```json
-{
-  "authentication": {
-    "type": "oauth2",
-    "authUrl": "https://auth.example.com/oauth/authorize",
-    "tokenUrl": "https://auth.example.com/oauth/token",
-    "clientId": "your-client-id",
-    "clientSecret": "your-client-secret",
-    "scope": "read write"
-  }
-}
+### 3. Validate Configuration
+
+```bash
+# Validate your configuration
+ape-test validate --config my-config.json
+
+# Validate entire project
+ape-test validate --project ./my-ape-test
 ```
 
-#### Custom Headers
-```json
-{
-  "authentication": {
-    "type": "custom",
-    "headers": {
-      "Authorization": "Custom ${TOKEN}",
-      "X-User-ID": "${USER_ID}",
-      "X-Session": "${SESSION_ID}"
-    }
-  }
-}
+### 4. Run Load Test
+
+```bash
+# Generate APE project from config
+ape-test setup --config my-config.json
+
+# Start load test
+cd my-api-test
+ape-test start --agents 25
 ```
 
-### Agent Goal Patterns
+## Configuration Fields
 
-#### Sequential Goals (Funnel Testing)
-```json
-{
-  "goals": [
-    "Visit homepage and browse featured products",
-    "Search for specific product category",
-    "View product details and read reviews", 
-    "Add product to cart and proceed to checkout",
-    "Complete purchase with payment processing"
-  ]
-}
-```
+### Required Fields
 
-#### Parallel Goals (Load Distribution)
-```json
-{
-  "goals": [
-    {
-      "name": "Browser Users",
-      "weight": 60,
-      "actions": ["Browse catalog", "Search products", "View details"]
-    },
-    {
-      "name": "Purchaser Users", 
-      "weight": 30,
-      "actions": ["Add to cart", "Checkout", "Payment"]
-    },
-    {
-      "name": "Admin Users",
-      "weight": 10, 
-      "actions": ["Manage inventory", "View analytics", "Process orders"]
-    }
-  ]
-}
-```
+| Field | Description | Example |
+|-------|-------------|---------|
+| `projectName` | Unique project identifier | `"ecommerce-api-test"` |
+| `targetUrl` | Application URL to test | `"https://api.example.com"` |
+| `agentCount` | Number of concurrent agents | `50` |
+| `testDuration` | Test duration in minutes | `15` |
+| `testGoal` | Agent behavior description | `"Simulate user purchases"` |
 
-### Validation Patterns
+### Authentication Fields
 
-#### Response Time Validation
-```json
-{
-  "validation": {
-    "endpoints": [
-      {
-        "path": "/api/products",
-        "maxResponseTime": 500,
-        "percentile": 95
-      },
-      {
-        "path": "/api/checkout",
-        "maxResponseTime": 2000,
-        "percentile": 99
-      }
-    ]
-  }
-}
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| `authType` | `none\|bearer\|basic\|session\|api-key` | Authentication method |
+| `authToken` | `string` | Bearer token or API key |
+| `authUsername` | `string` | Username for basic auth |
+| `authPassword` | `string` | Password for basic auth |
 
-#### Business Logic Validation
-```json
-{
-  "validation": {
-    "businessRules": [
-      {
-        "name": "Cart Total Accuracy",
-        "description": "Verify cart totals match item prices",
-        "validation": "cart.total === cart.items.reduce((sum, item) => sum + item.price * item.quantity, 0)"
-      },
-      {
-        "name": "Inventory Consistency", 
-        "description": "Check inventory decreases after purchase",
-        "validation": "post_purchase_inventory < pre_purchase_inventory"
-      }
-    ]
-  }
-}
-```
+### Optional Fields
 
-## Environment-Specific Configurations
+| Field | Description | Default |
+|-------|-------------|---------|
+| `targetPort` | Target application port | Extracted from URL |
+| `endpoints` | API endpoints to test | Template defaults |
+| `customHeaders` | Additional HTTP headers | `{}` |
 
-### Development Environment
-```json
-{
-  "target": {
-    "baseUrl": "http://localhost:3000"
-  },
-  "agents": {
-    "count": 5,
-    "duration": "2m"
-  },
-  "validation": {
-    "successCriteria": {
-      "successfulSessions": 70
-    }
-  }
-}
-```
+## Validation Rules
 
-### Staging Environment
-```json
-{
-  "target": {
-    "baseUrl": "https://staging.example.com"
-  },
-  "agents": {
-    "count": 25,
-    "duration": "10m"
-  },
-  "validation": {
-    "successCriteria": {
-      "successfulSessions": 85
-    }
-  }
-}
-```
+APE validates configurations against production best practices:
 
-### Production Environment
-```json
-{
-  "target": {
-    "baseUrl": "https://api.example.com"
-  },
-  "agents": {
-    "count": 100,
-    "duration": "30m"
-  },
-  "validation": {
-    "successCriteria": {
-      "successfulSessions": 95
-    }
-  }
-}
-```
+### Security Validation
+- ✅ HTTPS for production URLs
+- ✅ Secure authentication methods
+- ✅ No hardcoded credentials in descriptions
+- ⚠️ HTTP usage warnings for non-localhost
 
-## Advanced Patterns
+### Performance Validation
+- ✅ Reasonable agent counts (1-1000)
+- ✅ Appropriate test durations (1-1440 minutes)
+- ✅ Endpoint format validation
+- ⚠️ High-scale deployment warnings
 
-### Multi-Region Testing
-```json
-{
-  "regions": [
-    {
-      "name": "us-east-1",
-      "baseUrl": "https://us-east.api.example.com",
-      "agents": 50
-    },
-    {
-      "name": "eu-west-1", 
-      "baseUrl": "https://eu-west.api.example.com",
-      "agents": 30
-    },
-    {
-      "name": "ap-southeast-1",
-      "baseUrl": "https://ap-southeast.api.example.com", 
-      "agents": 20
-    }
-  ]
-}
-```
-
-### Load Testing with Data Dependencies
-```json
-{
-  "dataSetup": {
-    "preTest": [
-      "Create test user accounts",
-      "Populate product catalog",
-      "Set up payment methods"
-    ],
-    "postTest": [
-      "Clean up test data",
-      "Reset counters",
-      "Archive test results"
-    ]
-  }
-}
-```
-
-### Chaos Engineering Integration
-```json
-{
-  "chaosEngineering": {
-    "enabled": true,
-    "scenarios": [
-      {
-        "name": "Service Failure",
-        "probability": 0.1,
-        "action": "simulate_service_down",
-        "duration": "30s"
-      },
-      {
-        "name": "Network Latency",
-        "probability": 0.2, 
-        "action": "add_latency",
-        "latency": "500ms"
-      }
-    ]
-  }
-}
-```
+### Application-Specific Validation
+- ✅ Auth type compatibility with application type
+- ✅ Required endpoints for application type
+- ✅ Performance target alignment
+- ⚠️ Scaling recommendations per application type
 
 ## Best Practices
 
-### Configuration Management
-1. **Use environment variables** for sensitive data
-2. **Version control configurations** alongside code
-3. **Validate configurations** before running tests
-4. **Document custom settings** and their purposes
+### 1. Start Small, Scale Up
 
-### Performance Optimization
-1. **Start with small agent counts** and scale gradually
-2. **Monitor resource usage** during tests
-3. **Use realistic think times** between actions
-4. **Set appropriate timeouts** for your application
+```bash
+# Begin with fewer agents
+ape-test start --agents 10
 
-### Monitoring and Alerting
-1. **Define clear success criteria** upfront
-2. **Set up alerts** for critical thresholds
-3. **Monitor both APE and target** application metrics
-4. **Correlate logs** using trace IDs
+# Monitor performance and scale gradually
+ape-test scale --agents 50
+```
 
-### Security Considerations
-1. **Use test credentials** only
-2. **Avoid production data** in load tests
-3. **Secure API keys** and tokens
-4. **Limit test scope** to prevent data corruption
+### 2. Use Appropriate Templates
 
-## Contributing Examples
+- **REST API:** Standard web APIs, CRUD operations
+- **GraphQL:** Complex data fetching, real-time apps
+- **Microservices:** Distributed systems, service mesh
+- **Custom:** Unique architectures requiring custom configuration
 
-We welcome contributions of new examples! To add an example:
+### 3. Monitor Key Metrics
 
-1. **Create a new JSON file** following the naming pattern
-2. **Include comprehensive comments** explaining the configuration
-3. **Add documentation** to this README
-4. **Test the configuration** thoroughly
-5. **Submit a pull request** with your example
+- **Response Times:** Average, P95, P99 latencies
+- **Error Rates:** 4xx client errors, 5xx server errors
+- **Throughput:** Requests per second/minute
+- **Resource Usage:** CPU, memory, network utilization
 
-### Example Template
+### 4. Validate Before Production
+
+```bash
+# Always validate configuration
+ape-test validate --project ./my-test
+
+# Check for warnings and suggestions
+ape-test validate --verbose
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Authentication Failures**
+   - Verify token validity and format
+   - Check auth type compatibility
+   - Ensure proper header configuration
+
+2. **Network Connectivity**
+   - Use `host.docker.internal` instead of `localhost`
+   - Verify firewall and security group settings
+   - Check DNS resolution in containers
+
+3. **Performance Issues**
+   - Start with fewer agents and scale up
+   - Monitor resource usage on test machine
+   - Adjust timeouts for slow endpoints
+
+4. **Configuration Errors**
+   - Run `ape-test validate` for detailed error messages
+   - Check endpoint format (must start with `/`)
+   - Verify JSON syntax and required fields
+
+### Getting Help
+
+- **Validation:** `ape-test validate --verbose`
+- **Documentation:** Check README.md in generated projects
+- **Examples:** Review template files in this directory
+- **Logs:** Use `ape-test logs --follow` for real-time debugging
+
+## Advanced Configuration
+
+### Custom Headers
+
 ```json
 {
-  "name": "Your Example Name",
-  "description": "Brief description of the use case",
-  "target": {
-    "name": "example-app",
-    "baseUrl": "https://example.com"
-  },
-  "agents": {
-    "count": 10,
-    "goals": ["Example goal"]
-  },
-  "validation": {
-    "successCriteria": {
-      "successfulSessions": 80
-    }
+  "customHeaders": {
+    "Content-Type": "application/json",
+    "X-API-Version": "v1",
+    "X-Client-ID": "load-test"
   }
 }
 ```
+
+### Environment-Specific Overrides
+
+```bash
+# Development environment
+ape-test setup --template rest-api --env development
+
+# Production environment with optimizations
+ape-test setup --template rest-api --env production
+```
+
+### Application-Specific Docker Overrides
+
+Generated projects include application-specific Docker Compose overrides:
+
+- `ape.docker-compose.rest-api.yml`
+- `ape.docker-compose.graphql.yml`
+- `ape.docker-compose.microservices.yml`
+
+These provide optimized container configurations for each application type.
