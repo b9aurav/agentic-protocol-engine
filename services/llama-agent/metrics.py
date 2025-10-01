@@ -1,6 +1,7 @@
 """
 Prometheus metrics collection for Llama Agent.
 Implements Requirements 4.4, 6.2 for agent performance monitoring.
+Enhanced with comprehensive session success tracking (Requirements 4.6, 7.5, 8.3).
 """
 
 import time
@@ -15,19 +16,52 @@ from prometheus_client import Counter, Histogram, Gauge, Info, generate_latest, 
 agent_sessions_total = Counter(
     'ape_agent_sessions_total',
     'Total number of agent sessions started',
-    ['agent_id', 'goal_type']
+    ['agent_id', 'goal_type', 'transaction_type']
 )
 
 agent_sessions_successful = Counter(
     'ape_successful_sessions_total',
     'Total number of successful stateful sessions',
-    ['agent_id', 'goal_type']
+    ['agent_id', 'goal_type', 'transaction_type']
 )
 
 agent_sessions_failed = Counter(
     'ape_agent_sessions_failed_total',
     'Total number of failed agent sessions',
-    ['agent_id', 'goal_type', 'failure_reason']
+    ['agent_id', 'goal_type', 'transaction_type', 'failure_reason']
+)
+
+# Enhanced session success metrics (Requirements 4.6, 7.5, 8.3)
+successful_stateful_sessions_percentage = Gauge(
+    'ape_successful_stateful_sessions_percentage',
+    'Percentage of successful stateful sessions (primary APE metric)',
+    ['agent_id', 'time_window_minutes']
+)
+
+session_transaction_completion_rate = Histogram(
+    'ape_session_transaction_completion_rate',
+    'Transaction completion rate per session',
+    ['agent_id', 'transaction_type'],
+    buckets=[0.0, 0.25, 0.5, 0.75, 1.0]
+)
+
+session_step_count = Histogram(
+    'ape_session_step_count',
+    'Number of steps per session',
+    ['agent_id', 'outcome'],
+    buckets=[1, 2, 5, 10, 20, 30, 50, 100]
+)
+
+session_success_indicators = Counter(
+    'ape_session_success_indicators_total',
+    'Count of success indicators detected',
+    ['agent_id', 'indicator_category']
+)
+
+session_failure_indicators = Counter(
+    'ape_session_failure_indicators_total',
+    'Count of failure indicators detected',
+    ['agent_id', 'indicator_category']
 )
 
 agent_requests_total = Counter(
@@ -95,8 +129,8 @@ agent_info = Info(
 
 class AgentMetricsCollector:
     """
-    Metrics collector for Llama Agent performance tracking.
-    Implements Requirements 7.5, 8.1, 8.3 for session success tracking and validation.
+    Enhanced metrics collector for Llama Agent performance tracking.
+    Implements Requirements 7.5, 8.1, 8.3 for comprehensive session success tracking and validation.
     """
     
     def __init__(self, agent_id: str):
@@ -111,6 +145,10 @@ class AgentMetricsCollector:
         self._active_sessions = {}  # session_id -> start_time
         self._last_action_time = {}  # session_id -> last_action_timestamp
         
+        # Initialize session success tracker
+        from session_tracker import SessionSuccessTracker
+        self.session_tracker = SessionSuccessTracker(agent_id)
+        
         # Set agent information
         agent_info.info({
             'agent_id': agent_id,
@@ -121,33 +159,45 @@ class AgentMetricsCollector:
         # Increment concurrent agents count
         concurrent_agents_count.inc()
     
-    def start_session(self, session_id: str, goal_type: str = "unknown"):
+    def start_session(self, session_id: str, goal_type: str = "unknown", 
+                     session_context=None):
         """
-        Record the start of a new agent session.
+        Record the start of a new agent session with enhanced tracking.
         
         Args:
             session_id: Unique session identifier
             goal_type: Type of goal for this session
+            session_context: Optional session context for comprehensive tracking
         """
         with self._lock:
             self._active_sessions[session_id] = time.time()
             self._last_action_time[session_id] = time.time()
         
+        # Start comprehensive session tracking if context provided
+        if session_context:
+            self.session_tracker.start_tracking_session(session_context)
+            transaction_type = self.session_tracker._classify_transaction_type(session_context.goal)
+        else:
+            transaction_type = "unknown"
+        
         agent_sessions_total.labels(
             agent_id=self.agent_id,
-            goal_type=goal_type
+            goal_type=goal_type,
+            transaction_type=transaction_type.value if hasattr(transaction_type, 'value') else str(transaction_type)
         ).inc()
     
     def end_session(self, session_id: str, goal_type: str = "unknown", 
-                   success: bool = False, failure_reason: Optional[str] = None):
+                   success: bool = False, failure_reason: Optional[str] = None,
+                   session_context=None):
         """
-        Record the end of an agent session.
+        Record the end of an agent session with comprehensive metrics.
         
         Args:
             session_id: Session identifier
             goal_type: Type of goal for this session
             success: Whether the session completed successfully
             failure_reason: Reason for failure if not successful
+            session_context: Optional session context for detailed analysis
         """
         with self._lock:
             start_time = self._active_sessions.pop(session_id, time.time())
@@ -155,6 +205,43 @@ class AgentMetricsCollector:
         
         duration = time.time() - start_time
         outcome = "success" if success else "failure"
+        
+        # Finalize comprehensive session tracking
+        session_metrics = None
+        if session_context and session_id in self.session_tracker.active_sessions:
+            from session_tracker import SessionOutcome
+            session_outcome = SessionOutcome.SUCCESS if success else SessionOutcome.FAILURE
+            session_metrics = self.session_tracker.finalize_session(session_id, session_outcome)
+            
+            # Record enhanced metrics
+            session_step_count.labels(
+                agent_id=self.agent_id,
+                outcome=session_metrics.outcome.value
+            ).observe(session_metrics.total_steps)
+            
+            session_transaction_completion_rate.labels(
+                agent_id=self.agent_id,
+                transaction_type=session_metrics.transaction_type.value
+            ).observe(session_metrics.transaction_completion_rate)
+            
+            # Record success/failure indicators
+            for indicator in session_metrics.success_indicators:
+                category = indicator.split(':')[0] if ':' in indicator else 'general'
+                session_success_indicators.labels(
+                    agent_id=self.agent_id,
+                    indicator_category=category
+                ).inc()
+            
+            for indicator in session_metrics.failure_indicators:
+                category = indicator.split(':')[0] if ':' in indicator else 'general'
+                session_failure_indicators.labels(
+                    agent_id=self.agent_id,
+                    indicator_category=category
+                ).inc()
+            
+            transaction_type = session_metrics.transaction_type.value
+        else:
+            transaction_type = "unknown"
         
         # Record session duration
         agent_session_duration.labels(
@@ -167,14 +254,19 @@ class AgentMetricsCollector:
         if success:
             agent_sessions_successful.labels(
                 agent_id=self.agent_id,
-                goal_type=goal_type
+                goal_type=goal_type,
+                transaction_type=transaction_type
             ).inc()
         else:
             agent_sessions_failed.labels(
                 agent_id=self.agent_id,
                 goal_type=goal_type,
+                transaction_type=transaction_type,
                 failure_reason=failure_reason or "unknown"
             ).inc()
+        
+        # Update Successful Stateful Sessions percentage
+        self._update_successful_stateful_sessions_metric()
     
     def record_http_request(self, method: str, status_code: int):
         """
@@ -200,20 +292,26 @@ class AgentMetricsCollector:
             status_code=status_category
         ).inc()
     
-    def record_tool_call(self, tool_name: str, success: bool, session_id: Optional[str] = None):
+    def record_tool_call(self, tool_name: str, success: bool, session_id: Optional[str] = None,
+                        execution: Optional[object] = None):
         """
-        Record a tool call made by the agent.
+        Record a tool call made by the agent with enhanced session tracking.
         
         Args:
             tool_name: Name of the tool called
             success: Whether the tool call was successful
             session_id: Session ID for MTBA calculation
+            execution: Optional ToolExecution object for detailed tracking
         """
         agent_tool_calls_total.labels(
             agent_id=self.agent_id,
             tool_name=tool_name,
             success=str(success).lower()
         ).inc()
+        
+        # Update session progress tracking
+        if session_id and execution:
+            self.session_tracker.update_session_progress(session_id, execution)
         
         # Calculate and record MTBA (Mean Time Between Actions)
         if session_id:
@@ -266,6 +364,40 @@ class AgentMetricsCollector:
         """
         agent_context_size.labels(agent_id=self.agent_id).observe(size_bytes)
     
+    def _update_successful_stateful_sessions_metric(self):
+        """Update the Successful Stateful Sessions percentage metric."""
+        # Update for different time windows
+        for time_window in [15, 60, 240]:  # 15 min, 1 hour, 4 hours
+            percentage = self.session_tracker.get_successful_stateful_sessions_percentage(time_window)
+            successful_stateful_sessions_percentage.labels(
+                agent_id=self.agent_id,
+                time_window_minutes=str(time_window)
+            ).set(percentage)
+    
+    def get_session_success_metrics(self, time_window_minutes: int = 60) -> Dict[str, Any]:
+        """
+        Get comprehensive session success metrics.
+        
+        Args:
+            time_window_minutes: Time window to consider
+            
+        Returns:
+            Dictionary with session success metrics
+        """
+        return self.session_tracker.get_session_metrics_summary(time_window_minutes)
+    
+    def get_successful_stateful_sessions_percentage(self, time_window_minutes: int = 60) -> float:
+        """
+        Get the Successful Stateful Sessions percentage (primary APE metric).
+        
+        Args:
+            time_window_minutes: Time window to consider
+            
+        Returns:
+            Percentage of successful stateful sessions
+        """
+        return self.session_tracker.get_successful_stateful_sessions_percentage(time_window_minutes)
+    
     def cleanup(self):
         """Clean up metrics when agent shuts down."""
         concurrent_agents_count.dec()
@@ -311,16 +443,17 @@ def get_metrics_collector() -> Optional[AgentMetricsCollector]:
 
 
 @contextmanager
-def track_session_metrics(session_id: str, goal_type: str = "unknown"):
+def track_session_metrics(session_id: str, goal_type: str = "unknown", session_context=None):
     """
-    Context manager to track session metrics.
+    Context manager to track comprehensive session metrics.
     
     Args:
         session_id: Session identifier
         goal_type: Type of goal for this session
+        session_context: Optional AgentSessionContext for detailed tracking
         
     Usage:
-        with track_session_metrics('session-123', 'purchase_flow'):
+        with track_session_metrics('session-123', 'purchase_flow', session_context):
             # Execute session logic
             pass
     """
@@ -329,7 +462,7 @@ def track_session_metrics(session_id: str, goal_type: str = "unknown"):
         yield
         return
     
-    collector.start_session(session_id, goal_type)
+    collector.start_session(session_id, goal_type, session_context)
     success = False
     failure_reason = None
     
@@ -340,4 +473,4 @@ def track_session_metrics(session_id: str, goal_type: str = "unknown"):
         failure_reason = type(e).__name__
         raise
     finally:
-        collector.end_session(session_id, goal_type, success, failure_reason)
+        collector.end_session(session_id, goal_type, success, failure_reason, session_context)

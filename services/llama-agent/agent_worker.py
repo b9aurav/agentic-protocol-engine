@@ -15,6 +15,7 @@ from llama_index.core.agent.types import TaskStep, TaskStepOutput
 from llama_index.core.schema import AgentChatResponse
 
 from models import AgentSessionContext, AgentConfig, ToolExecution, MCPToolCall
+from metrics import get_metrics_collector
 
 
 logger = structlog.get_logger(__name__)
@@ -173,6 +174,16 @@ class StatefulAgentWorker(CustomSimpleAgentWorker):
                     )
                     session_context.add_execution(execution)
                     
+                    # Record tool call in metrics collector
+                    metrics_collector = get_metrics_collector()
+                    if metrics_collector:
+                        metrics_collector.record_tool_call(
+                            tool_name=step.step_id,
+                            success=True,
+                            session_id=session_id,
+                            execution=execution
+                        )
+                    
                     self.logger.info(
                         "Step executed successfully",
                         session_id=session_id,
@@ -216,6 +227,16 @@ class StatefulAgentWorker(CustomSimpleAgentWorker):
                         error_message=error_message
                     )
                     session_context.add_execution(execution)
+                    
+                    # Record failed tool call in metrics collector
+                    metrics_collector = get_metrics_collector()
+                    if metrics_collector:
+                        metrics_collector.record_tool_call(
+                            tool_name=step.step_id,
+                            success=False,
+                            session_id=session_id,
+                            execution=execution
+                        )
                 
                 if should_retry:
                     self.logger.warning(

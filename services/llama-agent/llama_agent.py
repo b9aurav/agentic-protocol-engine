@@ -14,6 +14,7 @@ from llama_index.core.tools import BaseTool
 from agent_worker import StatefulAgentWorker
 from models import AgentConfig, AgentSessionContext
 from tools import HTTPGetTool, HTTPPostTool, HTTPPutTool, HTTPDeleteTool, StateUpdateTool
+from metrics import initialize_metrics, get_metrics_collector
 
 
 logger = structlog.get_logger(__name__)
@@ -28,6 +29,9 @@ class LlamaAgent:
     def __init__(self, config: AgentConfig):
         self.config = config
         self.logger = logger.bind(agent_id=config.agent_id)
+        
+        # Initialize metrics collector with enhanced session tracking
+        self.metrics_collector = initialize_metrics(config.agent_id)
         
         # Initialize LLM with Cerebras Proxy endpoint
         self.llm = OpenAI(
@@ -83,7 +87,7 @@ class LlamaAgent:
     
     async def start_session(self, goal: str, session_id: Optional[str] = None) -> str:
         """
-        Start a new agent session with a specific goal.
+        Start a new agent session with a specific goal and enhanced tracking.
         
         Args:
             goal: The user journey goal (e.g., "complete purchase flow")
@@ -96,11 +100,17 @@ class LlamaAgent:
         self._update_tool_references()
         
         session_id = self.agent_worker.create_session(goal, session_id)
+        session_context = self.agent_worker.get_session(session_id)
+        
+        # Start enhanced session tracking
+        if session_context:
+            self.metrics_collector.start_session(session_id, goal, session_context)
         
         self.logger.info(
-            "Started new agent session",
+            "Started new agent session with enhanced tracking",
             session_id=session_id,
-            goal=goal
+            goal=goal,
+            trace_id=session_context.trace_id if session_context else None
         )
         
         return session_id
@@ -226,6 +236,15 @@ class LlamaAgent:
                     "trace_id": session_context.trace_id
                 }
                 
+                # Record session completion in metrics
+                self.metrics_collector.end_session(
+                    session_id=session_id,
+                    goal_type=updated_context.goal if updated_context else "unknown",
+                    success=result["success"],
+                    failure_reason=None,
+                    session_context=updated_context
+                )
+                
                 self.logger.info(
                     "Goal execution completed successfully",
                     session_id=session_id,
@@ -279,6 +298,15 @@ class LlamaAgent:
         
         # All attempts failed
         updated_context = self.agent_worker.get_session(session_id)
+        
+        # Record session failure in metrics
+        self.metrics_collector.end_session(
+            session_id=session_id,
+            goal_type=updated_context.goal if updated_context else "unknown",
+            success=False,
+            failure_reason=last_error,
+            session_context=updated_context
+        )
         
         self.logger.error(
             "Goal execution failed after all attempts",
@@ -562,8 +590,32 @@ class LlamaAgent:
                 session_id=session_id
             )
     
+    def get_session_success_metrics(self, time_window_minutes: int = 60) -> Dict[str, Any]:
+        """
+        Get comprehensive session success metrics.
+        
+        Args:
+            time_window_minutes: Time window to consider for metrics
+            
+        Returns:
+            Dictionary with session success metrics including Successful Stateful Sessions percentage
+        """
+        return self.metrics_collector.get_session_success_metrics(time_window_minutes)
+    
+    def get_successful_stateful_sessions_percentage(self, time_window_minutes: int = 60) -> float:
+        """
+        Get the Successful Stateful Sessions percentage (primary APE metric).
+        
+        Args:
+            time_window_minutes: Time window to consider
+            
+        Returns:
+            Percentage of successful stateful sessions (0.0 to 100.0)
+        """
+        return self.metrics_collector.get_successful_stateful_sessions_percentage(time_window_minutes)
+    
     async def health_check(self) -> Dict[str, Any]:
-        """Perform a health check of the agent."""
+        """Perform a health check of the agent with session metrics."""
         try:
             # Test LLM connectivity
             test_response = await self.llm.acomplete("Hello")
@@ -574,10 +626,15 @@ class LlamaAgent:
         
         active_sessions = len(self.agent_worker.sessions)
         
+        # Get recent session success metrics
+        session_metrics = self.get_session_success_metrics(15)  # Last 15 minutes
+        
         return {
             "agent_id": self.config.agent_id,
             "llm_healthy": llm_healthy,
             "active_sessions": active_sessions,
             "tools_count": len(self.tools),
-            "status": "healthy" if llm_healthy else "unhealthy"
+            "status": "healthy" if llm_healthy else "unhealthy",
+            "session_metrics": session_metrics,
+            "successful_stateful_sessions_percentage": session_metrics.get("successful_stateful_sessions_percentage", 0.0)
         }
