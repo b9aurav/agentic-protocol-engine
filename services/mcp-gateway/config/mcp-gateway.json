@@ -1,0 +1,54 @@
+{
+  "gateway": {
+    "name": "mcp-gateway",
+    "version": "1.0.0",
+    "port": 3000,
+    "host": "0.0.0.0"
+  },
+  "routes": {
+    "sut_api": {
+      "name": "System Under Test API",
+      "description": "Target application API for load testing",
+      "base_url": "http://localhost:8080",
+      "timeout": 30,
+      "retry_policy": {
+        "max_retries": 3,
+        "backoff_factor": 1.5,
+        "retry_on": [502, 503, 504, 408, 429]
+      },
+      "health_check": {
+        "enabled": true,
+        "path": "/health",
+        "interval": 30
+      }
+    },
+    "cerebras_api": {
+      "name": "Cerebras Inference API",
+      "description": "High-speed LLM inference via Cerebras proxy",
+      "base_url": "http://cerebras_proxy:8000",
+      "timeout": 10,
+      "retry_policy": {
+        "max_retries": 2,
+        "backoff_factor": 1.2,
+        "retry_on": [502, 503, 504, 408]
+      },
+      "health_check": {
+        "enabled": true,
+        "path": "/health",
+        "interval": 15
+      }
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "json",
+    "tracing": {
+      "enabled": true,
+      "header_name": "X-Trace-ID"
+    }
+  },
+  "metrics": {
+    "enabled": true,
+    "endpoint": "/metrics"
+  }
+}
