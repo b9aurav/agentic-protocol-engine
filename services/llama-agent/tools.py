@@ -63,56 +63,108 @@ class HTTPGetTool(BaseTool):
         )
         
         try:
-            # Send request to MCP Gateway
-            with httpx.Client(timeout=30.0) as client:
-                response = client.post(
-                    f"{self.mcp_gateway_url}/mcp/route",
-                    json=mcp_call.model_dump(),
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-Trace-ID": trace_id
-                    }
-                )
-                
-                execution_time = (datetime.utcnow() - start_time).total_seconds()
-                
-                # Process response
-                result = {
-                    "success": response.status_code < 400,
-                    "status_code": response.status_code,
-                    "headers": dict(response.headers),
-                    "execution_time": execution_time,
-                    "trace_id": trace_id,
-                    "method": "GET",
-                    "api_name": api_name,
-                    "path": path
-                }
-                
-                # Parse response body
+            # Send request to MCP Gateway with retry logic
+            max_retries = 3
+            retry_count = 0
+            
+            while retry_count <= max_retries:
                 try:
-                    result["data"] = response.json()
-                except json.JSONDecodeError:
-                    result["data"] = response.text
-                
-                # Extract session data from response headers for state management
-                session_data = {}
-                for header_name, header_value in response.headers.items():
-                    if header_name.lower() in ['set-cookie', 'authorization', 'x-session-token']:
-                        session_data[header_name] = header_value
-                
-                if session_data:
-                    result["session_data"] = session_data
-                
-                logger.info(
-                    "HTTP GET completed",
-                    trace_id=trace_id,
-                    status_code=response.status_code,
-                    execution_time=execution_time,
-                    success=result["success"]
-                )
-                
-                return result
-                
+                    with httpx.Client(timeout=30.0) as client:
+                        response = client.post(
+                            f"{self.mcp_gateway_url}/mcp/route",
+                            json=mcp_call.model_dump(),
+                            headers={
+                                "Content-Type": "application/json",
+                                "X-Trace-ID": trace_id,
+                                "X-Retry-Count": str(retry_count)
+                            }
+                        )
+                        
+                        execution_time = (datetime.utcnow() - start_time).total_seconds()
+                        
+                        # Process response with enhanced error categorization
+                        result = {
+                            "success": response.status_code < 400,
+                            "status_code": response.status_code,
+                            "headers": dict(response.headers),
+                            "execution_time": execution_time,
+                            "trace_id": trace_id,
+                            "method": "GET",
+                            "api_name": api_name,
+                            "path": path,
+                            "retry_count": retry_count
+                        }
+                        
+                        # Parse response body
+                        try:
+                            result["data"] = response.json()
+                        except json.JSONDecodeError:
+                            result["data"] = response.text
+                        
+                        # Enhanced session data extraction
+                        session_data = {}
+                        
+                        # Extract from response headers
+                        for header_name, header_value in response.headers.items():
+                            if header_name.lower() in ['set-cookie', 'authorization', 'x-session-token', 'x-auth-token']:
+                                session_data[header_name] = header_value
+                        
+                        # Extract from response body if it contains session information
+                        if isinstance(result.get("data"), dict):
+                            response_data = result["data"]
+                            session_keys = ['token', 'access_token', 'session_id', 'session_token', 'auth_token', 'csrf_token']
+                            for key in session_keys:
+                                if key in response_data:
+                                    session_data[key] = response_data[key]
+                        
+                        if session_data:
+                            result["session_data"] = session_data
+                        
+                        # Add error details for non-2xx responses
+                        if not result["success"]:
+                            result["error_category"] = self._categorize_http_error(response.status_code)
+                            result["error_message"] = f"HTTP {response.status_code}: {response.reason_phrase}"
+                            
+                            # Check if this is a retryable error
+                            if self._is_retryable_status(response.status_code) and retry_count < max_retries:
+                                retry_count += 1
+                                logger.warning(
+                                    "HTTP GET failed with retryable error, retrying",
+                                    trace_id=trace_id,
+                                    status_code=response.status_code,
+                                    retry_count=retry_count,
+                                    max_retries=max_retries
+                                )
+                                import time
+                                time.sleep(min(0.5 * (2 ** retry_count), 5.0))  # Exponential backoff
+                                continue
+                        
+                        logger.info(
+                            "HTTP GET completed",
+                            trace_id=trace_id,
+                            status_code=response.status_code,
+                            execution_time=execution_time,
+                            success=result["success"],
+                            retry_count=retry_count
+                        )
+                        
+                        return result
+                        
+                except httpx.TimeoutException as e:
+                    if retry_count < max_retries:
+                        retry_count += 1
+                        logger.warning(
+                            "HTTP GET timeout, retrying",
+                            trace_id=trace_id,
+                            retry_count=retry_count,
+                            timeout=30.0
+                        )
+                        import time
+                        time.sleep(min(1.0 * retry_count, 5.0))
+                        continue
+                    else:
+                        raise
+                        
         except httpx.RequestError as e:
             execution_time = (datetime.utcnow() - start_time).total_seconds()
             error_result = {
@@ -134,6 +186,26 @@ class HTTPGetTool(BaseTool):
             )
             
             return error_result
+    
+    def _categorize_http_error(self, status_code: int) -> str:
+        """Categorize HTTP status codes for error handling."""
+        if status_code in [401, 403]:
+            return "authentication"
+        elif status_code == 404:
+            return "not_found"
+        elif status_code == 429:
+            return "rate_limit"
+        elif 400 <= status_code < 500:
+            return "client_error"
+        elif 500 <= status_code < 600:
+            return "server_error"
+        else:
+            return "unknown"
+    
+    def _is_retryable_status(self, status_code: int) -> bool:
+        """Determine if an HTTP status code indicates a retryable error."""
+        # Retry on server errors and rate limiting
+        return status_code in [429, 500, 502, 503, 504]
 
 
 class HTTPPostTool(BaseTool):
@@ -186,63 +258,108 @@ class HTTPPostTool(BaseTool):
         )
         
         try:
-            # Send request to MCP Gateway
-            with httpx.Client(timeout=30.0) as client:
-                response = client.post(
-                    f"{self.mcp_gateway_url}/mcp/route",
-                    json=mcp_call.model_dump(),
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-Trace-ID": trace_id
-                    }
-                )
-                
-                execution_time = (datetime.utcnow() - start_time).total_seconds()
-                
-                # Process response
-                result = {
-                    "success": response.status_code < 400,
-                    "status_code": response.status_code,
-                    "headers": dict(response.headers),
-                    "execution_time": execution_time,
-                    "trace_id": trace_id,
-                    "method": "POST",
-                    "api_name": api_name,
-                    "path": path
-                }
-                
-                # Parse response body
+            # Send request to MCP Gateway with retry logic
+            max_retries = 3
+            retry_count = 0
+            
+            while retry_count <= max_retries:
                 try:
-                    result["data"] = response.json()
-                except json.JSONDecodeError:
-                    result["data"] = response.text
-                
-                # Extract session data from response headers for state management
-                session_data = {}
-                for header_name, header_value in response.headers.items():
-                    if header_name.lower() in ['set-cookie', 'authorization', 'x-session-token']:
-                        session_data[header_name] = header_value
-                
-                # Also extract session data from response body if it contains tokens/IDs
-                if isinstance(result.get("data"), dict):
-                    response_data = result["data"]
-                    for key in ['token', 'access_token', 'session_id', 'transaction_id', 'user_id']:
-                        if key in response_data:
-                            session_data[key] = response_data[key]
-                
-                if session_data:
-                    result["session_data"] = session_data
-                
-                logger.info(
-                    "HTTP POST completed",
-                    trace_id=trace_id,
-                    status_code=response.status_code,
-                    execution_time=execution_time,
-                    success=result["success"],
-                    has_session_data=bool(session_data)
-                )
-                
-                return result
+                    with httpx.Client(timeout=30.0) as client:
+                        response = client.post(
+                            f"{self.mcp_gateway_url}/mcp/route",
+                            json=mcp_call.model_dump(),
+                            headers={
+                                "Content-Type": "application/json",
+                                "X-Trace-ID": trace_id,
+                                "X-Retry-Count": str(retry_count)
+                            }
+                        )
+                        
+                        execution_time = (datetime.utcnow() - start_time).total_seconds()
+                        
+                        # Process response with enhanced error categorization
+                        result = {
+                            "success": response.status_code < 400,
+                            "status_code": response.status_code,
+                            "headers": dict(response.headers),
+                            "execution_time": execution_time,
+                            "trace_id": trace_id,
+                            "method": "POST",
+                            "api_name": api_name,
+                            "path": path,
+                            "retry_count": retry_count
+                        }
+                        
+                        # Parse response body
+                        try:
+                            result["data"] = response.json()
+                        except json.JSONDecodeError:
+                            result["data"] = response.text
+                        
+                        # Enhanced session data extraction
+                        session_data = {}
+                        
+                        # Extract from response headers
+                        for header_name, header_value in response.headers.items():
+                            if header_name.lower() in ['set-cookie', 'authorization', 'x-session-token', 'x-auth-token']:
+                                session_data[header_name] = header_value
+                        
+                        # Extract from response body if it contains session information
+                        if isinstance(result.get("data"), dict):
+                            response_data = result["data"]
+                            session_keys = ['token', 'access_token', 'session_id', 'session_token', 'auth_token', 'csrf_token', 'transaction_id', 'user_id']
+                            for key in session_keys:
+                                if key in response_data:
+                                    session_data[key] = response_data[key]
+                        
+                        if session_data:
+                            result["session_data"] = session_data
+                        
+                        # Add error details for non-2xx responses
+                        if not result["success"]:
+                            result["error_category"] = self._categorize_http_error(response.status_code)
+                            result["error_message"] = f"HTTP {response.status_code}: {response.reason_phrase}"
+                            
+                            # Check if this is a retryable error
+                            if self._is_retryable_status(response.status_code) and retry_count < max_retries:
+                                retry_count += 1
+                                logger.warning(
+                                    "HTTP POST failed with retryable error, retrying",
+                                    trace_id=trace_id,
+                                    status_code=response.status_code,
+                                    retry_count=retry_count,
+                                    max_retries=max_retries
+                                )
+                                import time
+                                time.sleep(min(0.5 * (2 ** retry_count), 5.0))  # Exponential backoff
+                                continue
+                        
+                        logger.info(
+                            "HTTP POST completed",
+                            trace_id=trace_id,
+                            status_code=response.status_code,
+                            execution_time=execution_time,
+                            success=result["success"],
+                            has_session_data=bool(session_data),
+                            retry_count=retry_count
+                        )
+                        
+                        return result
+                        
+                except httpx.TimeoutException as e:
+                    if retry_count < max_retries:
+                        retry_count += 1
+                        logger.warning(
+                            "HTTP POST timeout, retrying",
+                            trace_id=trace_id,
+                            retry_count=retry_count,
+                            timeout=30.0
+                        )
+                        import time
+                        time.sleep(min(1.0 * retry_count, 5.0))
+                        continue
+                    else:
+                        raise
                 
         except httpx.RequestError as e:
             execution_time = (datetime.utcnow() - start_time).total_seconds()
@@ -265,6 +382,26 @@ class HTTPPostTool(BaseTool):
             )
             
             return error_result
+    
+    def _categorize_http_error(self, status_code: int) -> str:
+        """Categorize HTTP status codes for error handling."""
+        if status_code in [401, 403]:
+            return "authentication"
+        elif status_code == 404:
+            return "not_found"
+        elif status_code == 429:
+            return "rate_limit"
+        elif 400 <= status_code < 500:
+            return "client_error"
+        elif 500 <= status_code < 600:
+            return "server_error"
+        else:
+            return "unknown"
+    
+    def _is_retryable_status(self, status_code: int) -> bool:
+        """Determine if an HTTP status code indicates a retryable error."""
+        # Retry on server errors and rate limiting
+        return status_code in [429, 500, 502, 503, 504]
 
 
 class HTTPPutTool(BaseTool):
