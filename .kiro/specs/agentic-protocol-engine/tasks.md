@@ -2,19 +2,6 @@
 
 - [x] 1. Set up project structure and core CLI framework
 
-
-
-
-
-
-
-
-
-
-
-
-
-
   - Create Node.js/TypeScript project with proper package.json for npm distribution
   - Implement basic CLI structure using Commander.js or similar framework
   - Set up development environment with TypeScript, ESLint, and build tools
@@ -22,19 +9,30 @@
   - **Auto-commit**: `feat: initialize project structure with CLI framework and build tools`
   - _Requirements: 5.1, 5.2_
 
-- [ ] 2. Implement CLI setup wizard and configuration generation
-  - [ ] 2.1 Create interactive setup wizard for `npx create-ape-test`
+- [x] 2. Implement CLI setup wizard and configuration generation
+
+
+
+
+
+  - [x] 2.1 Create interactive setup wizard for `npx create-ape-test`
+
+
     - Implement prompts for target application configuration (URL, ports, authentication)
     - Add prompts for test parameters (agent count, duration, goals)
     - Create validation for user inputs and provide helpful error messages
     - **Auto-commit**: `feat: add interactive setup wizard with configuration prompts`
     - _Requirements: 5.1, 5.2_
 
+
+
   - [ ] 2.2 Generate Docker Compose configuration files
     - Create template system for `ape.docker-compose.yml` generation
     - Implement dynamic service configuration based on user inputs
     - Generate network configuration for inter-service communication
     - **Auto-commit**: `feat: implement Docker Compose configuration generation`
+
+
     - _Requirements: 5.4, 6.2, 6.3_
 
   - [ ] 2.3 Generate MCP Gateway routing configuration
