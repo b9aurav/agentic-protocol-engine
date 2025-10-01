@@ -7,6 +7,7 @@ import { stopCommand } from './commands/stop';
 import { statusCommand } from './commands/status';
 import { logsCommand } from './commands/logs';
 import { createScaleCommand } from './commands/scale';
+import { createValidateCommand } from './commands/validate';
 import { version } from '../package.json';
 
 const program = new Command();
@@ -51,6 +52,9 @@ program
 
 // Scale command - Requirements 6.1, 6.4
 program.addCommand(createScaleCommand());
+
+// Validate command - Requirements 2.2, 6.4, 8.3 (Task 10.2)
+program.addCommand(createValidateCommand());
 
 // Error handling
 program.on('command:*', () => {
