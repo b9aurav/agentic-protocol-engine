@@ -55,7 +55,7 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
 
     // Validate service name if provided - Requirements 5.3, 4.2
     if (options.service) {
-      const serviceExists = status.services.some(s => s.name === options.service || s.name.includes(options.service));
+      const serviceExists = status.services.some(s => s.name === options.service || s.name.includes(options.service || ''));
       if (!serviceExists) {
         console.error(chalk.red(`Service "${options.service}" not found.`));
         console.log(chalk.yellow('Available services:'));

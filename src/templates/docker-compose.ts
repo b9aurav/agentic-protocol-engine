@@ -8,7 +8,6 @@ export interface DockerComposeConfig {
 }
 
 export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig {
-  const targetUrl = new URL(config.targetUrl);
   const networkName = `${config.projectName}_network`;
   
   // Dynamic scaling configuration based on user inputs - Requirements 6.1, 6.4
@@ -493,7 +492,7 @@ export function generatePrometheusConfig(config: SetupAnswers): any {
   };
 }
 
-export function generatePromtailConfig(config: SetupAnswers): any {
+export function generatePromtailConfig(_config: SetupAnswers): any {
   return {
     server: {
       http_listen_port: 9080,
@@ -630,7 +629,7 @@ export function generateDockerComposeWithEnvironment(config: SetupAnswers, envir
   }
 }
 
-function applyDevelopmentConfig(config: DockerComposeConfig, setupConfig: SetupAnswers): DockerComposeConfig {
+function applyDevelopmentConfig(config: DockerComposeConfig, _setupConfig: SetupAnswers): DockerComposeConfig {
   // Development optimizations: faster startup, more verbose logging, hot reload
   const devConfig = { ...config };
   
@@ -653,7 +652,7 @@ function applyDevelopmentConfig(config: DockerComposeConfig, setupConfig: SetupA
   return devConfig;
 }
 
-function applyStagingConfig(config: DockerComposeConfig, setupConfig: SetupAnswers): DockerComposeConfig {
+function applyStagingConfig(config: DockerComposeConfig, _setupConfig: SetupAnswers): DockerComposeConfig {
   // Staging optimizations: production-like but with enhanced monitoring
   const stagingConfig = { ...config };
   
@@ -669,7 +668,7 @@ function applyStagingConfig(config: DockerComposeConfig, setupConfig: SetupAnswe
   return stagingConfig;
 }
 
-function applyProductionConfig(config: DockerComposeConfig, setupConfig: SetupAnswers): DockerComposeConfig {
+function applyProductionConfig(config: DockerComposeConfig, _setupConfig: SetupAnswers): DockerComposeConfig {
   // Production optimizations: security, performance, reliability
   const prodConfig = { ...config };
   

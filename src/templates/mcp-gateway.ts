@@ -68,8 +68,6 @@ export interface EndpointConfig {
 }
 
 export function generateMCPGatewayConfig(config: SetupAnswers): MCPGatewayConfig {
-  const targetUrl = new URL(config.targetUrl);
-  
   // Generate endpoint configurations from user input
   const endpoints: EndpointConfig[] = config.endpoints.map(endpoint => ({
     path: endpoint,
