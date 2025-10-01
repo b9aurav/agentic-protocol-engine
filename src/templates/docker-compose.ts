@@ -22,7 +22,7 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
       mcp_gateway: {
         image: 'ape/mcp-gateway:latest',
         container_name: `${config.projectName}_mcp_gateway`,
-        ports: ['3000:3000'],
+        ports: ['3000:3000', '8001:8001'], // Main port and metrics port
         environment: {
           NODE_ENV: 'production',
           LOG_LEVEL: 'info',
@@ -31,7 +31,9 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           TARGET_URL: config.targetUrl,
           MAX_CONCURRENT_AGENTS: `${config.agentCount}`,
           RATE_LIMIT_ENABLED: 'true',
-          CORS_ENABLED: 'true'
+          CORS_ENABLED: 'true',
+          METRICS_PORT: '8001',
+          METRICS_ENABLED: 'true'
         },
         volumes: [
           './ape.mcp-gateway.json:/app/config/mcp-gateway.json:ro'
@@ -60,11 +62,12 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
       cerebras_proxy: {
         image: 'ape/cerebras-proxy:latest',
         container_name: `${config.projectName}_cerebras_proxy`,
-        ports: ['8000:8000'],
+        ports: ['8000:8000', '8002:8002'], // Main port and metrics port
         environment: {
           CEREBRAS_API_KEY: '${CEREBRAS_API_KEY}',
           LOG_LEVEL: 'info',
           METRICS_ENABLED: 'true',
+          METRICS_PORT: '8002',
           MAX_CONCURRENT_REQUESTS: `${config.agentCount * 2}`, // Allow 2x agent count for burst
           TTFT_TARGET_MS: '500', // Target Time-to-First-Token in milliseconds
           REQUEST_TIMEOUT: '10000', // 10 second timeout for inference
@@ -92,6 +95,7 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
       // Llama Agent Service - Requirements 1.1, 6.1, 6.4
       llama_agent: {
         image: 'ape/llama-agent:latest',
+        ports: ['8000'], // Expose metrics port for Prometheus scraping
         environment: {
           MCP_GATEWAY_URL: 'http://mcp_gateway:3000',
           AGENT_GOAL: config.testGoal,
@@ -101,6 +105,8 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           AGENT_ID: '${HOSTNAME}', // Dynamic agent identification
           TEST_DURATION: `${config.testDuration}`,
           TARGET_ENDPOINTS: config.endpoints.join(','),
+          METRICS_PORT: '8000', // Port for metrics endpoint
+          METRICS_ENABLED: 'true',
           // Dynamic authentication configuration
           ...(config.authType !== 'none' && {
             AUTH_TYPE: config.authType,
@@ -353,51 +359,135 @@ export function generatePrometheusConfig(config: SetupAnswers): any {
   return {
     global: {
       scrape_interval: '15s',
-      evaluation_interval: '15s'
+      evaluation_interval: '15s',
+      external_labels: {
+        cluster: 'ape-load-test',
+        environment: 'production',
+        project: config.projectName
+      }
     },
-    rule_files: [],
+    rule_files: ['rules.yml'],
     scrape_configs: [
+      // Prometheus self-monitoring
       {
         job_name: 'prometheus',
         static_configs: [
           {
             targets: ['localhost:9090']
           }
-        ]
+        ],
+        scrape_interval: '30s'
       },
+      
+      // cAdvisor for container metrics
       {
         job_name: 'cadvisor',
         static_configs: [
           {
             targets: ['cadvisor:8080']
           }
+        ],
+        scrape_interval: '15s',
+        relabel_configs: [
+          {
+            source_labels: ['container_label_com_docker_compose_service'],
+            target_label: 'ape_service'
+          },
+          {
+            source_labels: ['container_label_com_docker_compose_project'],
+            target_label: 'ape_project'
+          },
+          {
+            source_labels: ['name'],
+            regex: '/(.*)',
+            target_label: 'container_name'
+          }
         ]
       },
+      
+      // Node Exporter for host system metrics
       {
         job_name: 'node-exporter',
         static_configs: [
           {
             targets: ['node_exporter:9100']
           }
-        ]
+        ],
+        scrape_interval: '15s'
       },
+      
+      // MCP Gateway metrics
       {
         job_name: 'mcp-gateway',
         static_configs: [
           {
-            targets: ['mcp_gateway:3000']
+            targets: ['mcp_gateway:8001']
           }
         ],
-        metrics_path: '/metrics'
+        metrics_path: '/metrics',
+        scrape_interval: '5s',
+        scrape_timeout: '10s'
       },
+      
+      // Cerebras Proxy metrics
       {
         job_name: 'cerebras-proxy',
         static_configs: [
           {
-            targets: ['cerebras_proxy:8000']
+            targets: ['cerebras_proxy:8002']
           }
         ],
-        metrics_path: '/metrics'
+        metrics_path: '/metrics',
+        scrape_interval: '5s',
+        scrape_timeout: '10s'
+      },
+      
+      // APE Agent metrics (dynamic discovery)
+      {
+        job_name: 'ape-agents',
+        docker_sd_configs: [
+          {
+            host: 'unix:///var/run/docker.sock',
+            port: 8000,
+            refresh_interval: '15s',
+            filters: [
+              {
+                name: 'label',
+                values: ['com.docker.compose.service=llama-agent']
+              }
+            ]
+          }
+        ],
+        relabel_configs: [
+          {
+            source_labels: ['__meta_docker_port_public'],
+            regex: '8000',
+            action: 'keep'
+          },
+          {
+            target_label: 'job',
+            replacement: 'ape-agent'
+          },
+          {
+            source_labels: ['__meta_docker_container_name'],
+            regex: '.*_llama-agent_([0-9]+)',
+            target_label: 'agent_id',
+            replacement: 'agent-${1}'
+          },
+          {
+            source_labels: ['__meta_docker_container_label_com_docker_compose_service'],
+            target_label: 'service_name'
+          },
+          {
+            source_labels: ['__meta_docker_container_id'],
+            target_label: 'container_id',
+            regex: '(.{12}).*',
+            replacement: '${1}'
+          }
+        ],
+        scrape_interval: '5s',
+        metrics_path: '/metrics',
+        scrape_timeout: '10s'
       }
     ]
   };

@@ -5,12 +5,17 @@ import os
 import asyncio
 import signal
 import sys
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import structlog
 from dotenv import load_dotenv
+from fastapi import FastAPI, Response
+from fastapi.responses import PlainTextResponse
+import uvicorn
+import threading
 
 from llama_agent import LlamaAgent
 from models import AgentConfig
+from metrics import initialize_metrics, get_metrics_collector, AgentMetricsCollector
 
 
 # Load environment variables
@@ -45,6 +50,9 @@ class AgentService:
         self.agent: Optional[LlamaAgent] = None
         self.running = False
         self.config = self._load_config()
+        self.metrics_collector: Optional[AgentMetricsCollector] = None
+        self.metrics_app: Optional[FastAPI] = None
+        self.metrics_server = None
     
     def _load_config(self) -> AgentConfig:
         """Load configuration from environment variables."""
@@ -63,6 +71,12 @@ class AgentService:
         logger.info("Starting Llama Agent service", config=self.config.dict())
         
         try:
+            # Initialize metrics
+            self.metrics_collector = initialize_metrics(self.config.agent_id)
+            
+            # Start metrics HTTP server
+            await self._start_metrics_server()
+            
             # Initialize the agent
             self.agent = LlamaAgent(self.config)
             self.running = True
@@ -112,7 +126,50 @@ class AgentService:
             # Cleanup all sessions
             self.agent.cleanup_sessions()
         
+        # Cleanup metrics
+        if self.metrics_collector:
+            self.metrics_collector.cleanup()
+        
+        # Stop metrics server
+        if self.metrics_server:
+            self.metrics_server.should_exit = True
+        
         logger.info("Agent service stopped")
+    
+    async def _start_metrics_server(self):
+        """Start the metrics HTTP server."""
+        self.metrics_app = FastAPI(title="Agent Metrics", version="1.0.0")
+        
+        @self.metrics_app.get("/metrics")
+        async def get_metrics():
+            """Prometheus metrics endpoint."""
+            collector = get_metrics_collector()
+            if collector:
+                metrics_data = collector.get_prometheus_metrics()
+                return PlainTextResponse(content=metrics_data, media_type="text/plain")
+            else:
+                return PlainTextResponse(content="# No metrics available\n", media_type="text/plain")
+        
+        @self.metrics_app.get("/health")
+        async def health_check():
+            """Health check endpoint."""
+            return {"status": "healthy", "agent_id": self.config.agent_id}
+        
+        # Start the metrics server in a separate thread
+        metrics_port = int(os.getenv("METRICS_PORT", "8000"))
+        
+        def run_metrics_server():
+            uvicorn.run(
+                self.metrics_app,
+                host="0.0.0.0",
+                port=metrics_port,
+                log_level="warning"  # Reduce log noise
+            )
+        
+        metrics_thread = threading.Thread(target=run_metrics_server, daemon=True)
+        metrics_thread.start()
+        
+        logger.info(f"Metrics server started on port {metrics_port}")
     
     def handle_signal(self, signum, frame):
         """Handle shutdown signals."""

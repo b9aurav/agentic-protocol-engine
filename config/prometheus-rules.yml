@@ -45,20 +45,20 @@ groups:
           service: ape-agent
         annotations:
           summary: "High error rate in APE agents"
-          description: "Agent error rate is above 10% for more than 2 minutes"
+          description: "Agent {{ $labels.agent_id }} error rate is above 10% for more than 2 minutes"
 
       # Low successful session rate
       - alert: LowSuccessfulSessionRate
-        expr: rate(ape_successful_sessions_total[5m]) / rate(ape_total_sessions_total[5m]) < 0.7
+        expr: rate(ape_successful_sessions_total[5m]) / rate(ape_agent_sessions_total[5m]) < 0.7
         for: 3m
         labels:
           severity: warning
           service: ape-agent
         annotations:
           summary: "Low successful session rate"
-          description: "Successful session rate is below 70% for more than 3 minutes"
+          description: "Agent {{ $labels.agent_id }} successful session rate is below 70% for more than 3 minutes"
 
-      # High TTFT (Time to First Token)
+      # High TTFT (Time to First Token) - Agent metrics
       - alert: HighTTFT
         expr: histogram_quantile(0.95, rate(ape_inference_ttft_seconds_bucket[5m])) > 2.0
         for: 2m
@@ -67,7 +67,40 @@ groups:
           service: cerebras-proxy
         annotations:
           summary: "High Time to First Token latency"
-          description: "95th percentile TTFT is above 2 seconds for more than 2 minutes"
+          description: "Agent {{ $labels.agent_id }} 95th percentile TTFT is above 2 seconds for more than 2 minutes"
+
+      # High TTFT (Time to First Token) - Cerebras Proxy metrics
+      - alert: HighCerebrasTTFT
+        expr: cerebras_proxy_ttft_seconds_p95 > 2.0
+        for: 2m
+        labels:
+          severity: warning
+          service: cerebras-proxy
+        annotations:
+          summary: "High Cerebras Proxy TTFT latency"
+          description: "Cerebras Proxy 95th percentile TTFT is above 2 seconds for more than 2 minutes"
+
+      # Low token processing rate
+      - alert: LowTokenProcessingRate
+        expr: cerebras_proxy_tokens_per_second < 10
+        for: 3m
+        labels:
+          severity: warning
+          service: cerebras-proxy
+        annotations:
+          summary: "Low token processing rate"
+          description: "Cerebras Proxy token processing rate is below 10 tokens/second for more than 3 minutes"
+
+      # High inference error rate
+      - alert: HighInferenceErrorRate
+        expr: rate(cerebras_proxy_errors_total[5m]) / rate(cerebras_proxy_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: cerebras-proxy
+        annotations:
+          summary: "High inference error rate"
+          description: "Cerebras Proxy error rate is above 5% for more than 2 minutes"
 
       # High MTBA (Mean Time Between Actions)
       - alert: HighMTBA
@@ -78,13 +111,35 @@ groups:
           service: ape-agent
         annotations:
           summary: "High Mean Time Between Actions"
-          description: "95th percentile MTBA is above 1 second for more than 2 minutes"
+          description: "Agent {{ $labels.agent_id }} 95th percentile MTBA is above 1 second for more than 2 minutes"
+
+      # Agent session failure rate too high
+      - alert: HighAgentSessionFailureRate
+        expr: rate(ape_agent_sessions_failed_total[5m]) / rate(ape_agent_sessions_total[5m]) > 0.3
+        for: 3m
+        labels:
+          severity: warning
+          service: ape-agent
+        annotations:
+          summary: "High agent session failure rate"
+          description: "Agent {{ $labels.agent_id }} session failure rate is above 30% for more than 3 minutes"
+
+      # Tool call failure rate too high
+      - alert: HighToolCallFailureRate
+        expr: rate(ape_agent_tool_calls_total{success="false"}[5m]) / rate(ape_agent_tool_calls_total[5m]) > 0.2
+        for: 2m
+        labels:
+          severity: warning
+          service: ape-agent
+        annotations:
+          summary: "High tool call failure rate"
+          description: "Agent {{ $labels.agent_id }} tool call failure rate is above 20% for more than 2 minutes"
 
   - name: ape_gateway_alerts
     rules:
       # High MCP Gateway error rate
       - alert: HighGatewayErrorRate
-        expr: rate(ape_gateway_errors_total[5m]) / rate(ape_gateway_requests_total[5m]) > 0.05
+        expr: rate(mcp_gateway_errors_total[5m]) / rate(mcp_gateway_requests_total[5m]) > 0.05
         for: 2m
         labels:
           severity: warning
@@ -95,7 +150,7 @@ groups:
 
       # High gateway response time
       - alert: HighGatewayLatency
-        expr: histogram_quantile(0.95, rate(ape_gateway_request_duration_seconds_bucket[5m])) > 5.0
+        expr: histogram_quantile(0.95, rate(mcp_gateway_request_duration_seconds_bucket[5m])) > 5.0
         for: 2m
         labels:
           severity: warning
