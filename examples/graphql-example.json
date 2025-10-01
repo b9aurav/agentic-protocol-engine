@@ -1,0 +1,107 @@
+{
+  "name": "Social Media GraphQL API Load Test",
+  "description": "Load test for a social media platform using GraphQL with complex queries and mutations",
+  "target": {
+    "name": "social-graphql",
+    "baseUrl": "https://api.social.example.com/graphql",
+    "authentication": {
+      "type": "jwt",
+      "loginMutation": "mutation Login($email: String!, $password: String!) { login(email: $email, password: $password) { token user { id name email } } }",
+      "credentials": {
+        "email": "test.user@example.com",
+        "password": "test-password-456"
+      },
+      "tokenField": "data.login.token"
+    },
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    }
+  },
+  "agents": {
+    "count": 75,
+    "rampUp": "2m",
+    "goals": [
+      "Query user profile and friend connections",
+      "Create new posts with text and media",
+      "Browse and interact with news feed",
+      "Send and receive direct messages",
+      "Join and participate in group discussions",
+      "Search for users and content",
+      "Update profile information and settings",
+      "Manage privacy and notification preferences"
+    ],
+    "sessionDuration": "15m",
+    "thinkTime": {
+      "min": 2,
+      "max": 8
+    }
+  },
+  "test": {
+    "duration": "45m",
+    "warmup": "3m",
+    "cooldown": "2m"
+  },
+  "graphql": {
+    "introspection": true,
+    "queries": [
+      {
+        "name": "GetUserProfile",
+        "query": "query GetUserProfile($userId: ID!) { user(id: $userId) { id name email avatar posts { id content createdAt likes } } }",
+        "variables": {
+          "userId": "dynamic"
+        }
+      },
+      {
+        "name": "GetNewsFeed",
+        "query": "query GetNewsFeed($limit: Int!, $offset: Int!) { posts(limit: $limit, offset: $offset) { id content author { name avatar } createdAt likes comments { id text author { name } } } }",
+        "variables": {
+          "limit": 20,
+          "offset": "dynamic"
+        }
+      }
+    ],
+    "mutations": [
+      {
+        "name": "CreatePost",
+        "mutation": "mutation CreatePost($content: String!, $mediaUrls: [String!]) { createPost(content: $content, mediaUrls: $mediaUrls) { id content createdAt author { name } } }",
+        "variables": {
+          "content": "dynamic",
+          "mediaUrls": []
+        }
+      },
+      {
+        "name": "LikePost",
+        "mutation": "mutation LikePost($postId: ID!) { likePost(postId: $postId) { id likes } }",
+        "variables": {
+          "postId": "dynamic"
+        }
+      }
+    ]
+  },
+  "validation": {
+    "successCriteria": {
+      "successfulSessions": 80,
+      "errorRate": 8,
+      "avgResponseTime": 1500
+    },
+    "queries": [
+      {
+        "name": "GetUserProfile",
+        "maxResponseTime": 800,
+        "expectedFields": ["id", "name", "email"]
+      },
+      {
+        "name": "GetNewsFeed",
+        "maxResponseTime": 1200,
+        "expectedFields": ["posts"]
+      }
+    ]
+  },
+  "cerebras": {
+    "model": "llama3.1-8b",
+    "temperature": 0.8,
+    "maxTokens": 1200,
+    "systemPrompt": "You are simulating a social media user. Engage naturally with content, create meaningful posts, and interact with other users' content. Use GraphQL queries and mutations appropriately."
+  }
+}

@@ -1,0 +1,194 @@
+{
+  "name": "Microservices Architecture Load Test",
+  "description": "Load test for a distributed microservices architecture with service mesh and API gateway",
+  "target": {
+    "name": "microservices-platform",
+    "baseUrl": "https://api-gateway.example.com",
+    "authentication": {
+      "type": "jwt",
+      "loginEndpoint": "/auth/v1/login",
+      "credentials": {
+        "username": "service-test-user",
+        "password": "microservices-test-123"
+      },
+      "tokenField": "access_token",
+      "refreshEndpoint": "/auth/v1/refresh"
+    },
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "X-Client-Version": "1.0.0",
+      "X-Request-ID": "dynamic"
+    }
+  },
+  "services": [
+    {
+      "name": "user-service",
+      "basePath": "/users/v1",
+      "endpoints": [
+        {"path": "/profile", "method": "GET"},
+        {"path": "/profile", "method": "PUT"},
+        {"path": "/preferences", "method": "GET"},
+        {"path": "/preferences", "method": "POST"}
+      ]
+    },
+    {
+      "name": "product-service", 
+      "basePath": "/products/v1",
+      "endpoints": [
+        {"path": "/catalog", "method": "GET"},
+        {"path": "/search", "method": "POST"},
+        {"path": "/recommendations", "method": "GET"},
+        {"path": "/reviews", "method": "POST"}
+      ]
+    },
+    {
+      "name": "order-service",
+      "basePath": "/orders/v1", 
+      "endpoints": [
+        {"path": "/cart", "method": "GET"},
+        {"path": "/cart/items", "method": "POST"},
+        {"path": "/checkout", "method": "POST"},
+        {"path": "/history", "method": "GET"}
+      ]
+    },
+    {
+      "name": "payment-service",
+      "basePath": "/payments/v1",
+      "endpoints": [
+        {"path": "/methods", "method": "GET"},
+        {"path": "/process", "method": "POST"},
+        {"path": "/refund", "method": "POST"}
+      ]
+    }
+  ],
+  "agents": {
+    "count": 150,
+    "rampUp": "5m",
+    "goals": [
+      "Complete end-to-end user registration and profile setup",
+      "Browse product catalog across multiple categories",
+      "Perform complex product searches with filters",
+      "Add multiple items to cart from different services",
+      "Complete checkout with payment processing",
+      "View order history and track shipments",
+      "Leave reviews and ratings for purchased products",
+      "Update user preferences and notification settings"
+    ],
+    "sessionDuration": "12m",
+    "thinkTime": {
+      "min": 1,
+      "max": 4
+    },
+    "distribution": {
+      "newUsers": 30,
+      "returningUsers": 70
+    }
+  },
+  "test": {
+    "duration": "45m",
+    "warmup": "3m",
+    "cooldown": "2m",
+    "phases": [
+      {"duration": "10m", "agents": 50, "description": "Initial ramp-up"},
+      {"duration": "20m", "agents": 150, "description": "Peak load"},
+      {"duration": "10m", "agents": 100, "description": "Sustained load"},
+      {"duration": "5m", "agents": 25, "description": "Cool-down"}
+    ]
+  },
+  "serviceDiscovery": {
+    "enabled": true,
+    "registry": "consul",
+    "healthChecks": true,
+    "circuitBreaker": {
+      "enabled": true,
+      "failureThreshold": 5,
+      "timeout": 30000
+    }
+  },
+  "tracing": {
+    "enabled": true,
+    "jaeger": {
+      "endpoint": "http://jaeger:14268/api/traces",
+      "serviceName": "ape-load-test"
+    },
+    "propagation": ["tracecontext", "baggage", "b3"]
+  },
+  "validation": {
+    "successCriteria": {
+      "successfulSessions": 85,
+      "errorRate": 5,
+      "avgResponseTime": 1500,
+      "serviceAvailability": 99.5
+    },
+    "serviceEndpoints": [
+      {
+        "service": "user-service",
+        "path": "/profile",
+        "maxResponseTime": 500,
+        "expectedStatus": 200
+      },
+      {
+        "service": "product-service",
+        "path": "/catalog",
+        "maxResponseTime": 800,
+        "expectedStatus": 200
+      },
+      {
+        "service": "order-service", 
+        "path": "/checkout",
+        "maxResponseTime": 2000,
+        "expectedStatus": 201
+      },
+      {
+        "service": "payment-service",
+        "path": "/process",
+        "maxResponseTime": 3000,
+        "expectedStatus": 200
+      }
+    ],
+    "crossServiceValidation": [
+      {
+        "name": "Order-Payment Consistency",
+        "description": "Verify order totals match payment amounts",
+        "services": ["order-service", "payment-service"]
+      },
+      {
+        "name": "User-Product Recommendations",
+        "description": "Validate personalized recommendations",
+        "services": ["user-service", "product-service"]
+      }
+    ]
+  },
+  "monitoring": {
+    "metrics": {
+      "serviceLatency": true,
+      "errorRates": true,
+      "throughput": true,
+      "resourceUsage": true
+    },
+    "alerts": [
+      {
+        "name": "High Error Rate",
+        "condition": "error_rate > 10%",
+        "duration": "2m"
+      },
+      {
+        "name": "Service Unavailable", 
+        "condition": "availability < 95%",
+        "duration": "1m"
+      },
+      {
+        "name": "High Latency",
+        "condition": "p95_latency > 5000ms",
+        "duration": "3m"
+      }
+    ]
+  },
+  "cerebras": {
+    "model": "llama3.1-8b",
+    "temperature": 0.8,
+    "maxTokens": 1200,
+    "systemPrompt": "You are simulating a user interacting with a complex microservices platform. Navigate between different services naturally, maintain context across service boundaries, and handle service failures gracefully."
+  }
+}

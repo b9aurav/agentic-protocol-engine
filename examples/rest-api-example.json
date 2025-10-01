@@ -1,0 +1,80 @@
+{
+  "name": "E-commerce REST API Load Test",
+  "description": "Comprehensive load test for an e-commerce REST API with user authentication and shopping workflows",
+  "target": {
+    "name": "ecommerce-api",
+    "baseUrl": "https://api.shop.example.com",
+    "authentication": {
+      "type": "bearer",
+      "loginEndpoint": "/auth/login",
+      "credentials": {
+        "username": "loadtest-user",
+        "password": "secure-password-123"
+      },
+      "tokenField": "access_token",
+      "refreshEndpoint": "/auth/refresh"
+    },
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "User-Agent": "APE-LoadTest/1.0"
+    }
+  },
+  "agents": {
+    "count": 100,
+    "rampUp": "3m",
+    "goals": [
+      "Register new user account and verify email",
+      "Browse product catalog and search for items",
+      "Add multiple items to shopping cart",
+      "Apply discount codes and calculate totals",
+      "Complete checkout process with payment",
+      "View order history and track shipments",
+      "Update user profile and preferences",
+      "Leave product reviews and ratings"
+    ],
+    "sessionDuration": "10m",
+    "thinkTime": {
+      "min": 1,
+      "max": 5
+    }
+  },
+  "test": {
+    "duration": "30m",
+    "warmup": "2m",
+    "cooldown": "1m"
+  },
+  "validation": {
+    "successCriteria": {
+      "successfulSessions": 85,
+      "errorRate": 5,
+      "avgResponseTime": 2000
+    },
+    "endpoints": [
+      {
+        "path": "/products",
+        "method": "GET",
+        "expectedStatus": 200,
+        "maxResponseTime": 1000
+      },
+      {
+        "path": "/cart",
+        "method": "POST",
+        "expectedStatus": 201,
+        "maxResponseTime": 500
+      },
+      {
+        "path": "/orders",
+        "method": "POST",
+        "expectedStatus": 201,
+        "maxResponseTime": 3000
+      }
+    ]
+  },
+  "cerebras": {
+    "model": "llama3.1-8b",
+    "temperature": 0.7,
+    "maxTokens": 1000,
+    "systemPrompt": "You are simulating a realistic e-commerce customer. Make decisions based on typical shopping behavior patterns. Maintain session state and adapt to application responses."
+  }
+}

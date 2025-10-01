@@ -92,3 +92,243 @@ APE focuses on metrics that prove the superiority of AI simulation over traditio
     *   **Concurrent Active Agents:** Live count of `llama_agent` containers.
     *   **CPU/Memory Utilization:** Resource consumption to identify bottlenecks.
     *   **Mean Time Between Actions (MTBA):** Validation of realism (must be < 1 second).
+
+## Quick Start
+
+### Prerequisites
+
+- **Node.js 18+** - For running the CLI tool
+- **Docker & Docker Compose** - For container orchestration
+- **Cerebras API Key** - For LLM inference (sign up at [Cerebras Cloud](https://cloud.cerebras.ai/))
+
+### Installation
+
+Install APE globally using npm:
+
+```bash
+npm install -g agentic-protocol-engine
+```
+
+Or use npx for one-time setup:
+
+```bash
+npx create-ape-test my-load-test
+```
+
+### Basic Usage
+
+1. **Create a new test project:**
+   ```bash
+   npx create-ape-test my-api-test
+   cd my-api-test
+   ```
+
+2. **Configure your target application:**
+   The setup wizard will prompt you for:
+   - Target application URL
+   - Authentication details
+   - Test parameters (agent count, duration, goals)
+
+3. **Start the load test:**
+   ```bash
+   ape-test start --agents 50 --duration 10
+   ```
+
+4. **Monitor in real-time:**
+   ```bash
+   # View live status
+   ape-test status --watch
+   
+   # Follow logs
+   ape-test logs --follow
+   
+   # Filter by trace ID
+   ape-test logs --grep "trace-12345"
+   ```
+
+5. **Access Grafana dashboards:**
+   Open http://localhost:3000 (admin/admin) to view real-time metrics and logs.
+
+6. **Stop the test:**
+   ```bash
+   ape-test stop
+   ```
+
+## Configuration Examples
+
+### REST API Testing
+
+```json
+{
+  "target": {
+    "name": "my-api",
+    "baseUrl": "https://api.example.com",
+    "authentication": {
+      "type": "bearer",
+      "loginEndpoint": "/auth/login",
+      "credentials": {
+        "username": "test-user",
+        "password": "test-pass"
+      }
+    }
+  },
+  "agents": {
+    "count": 100,
+    "goals": [
+      "Complete user registration flow",
+      "Browse products and add to cart",
+      "Complete checkout process"
+    ]
+  },
+  "test": {
+    "duration": "15m",
+    "rampUp": "2m"
+  }
+}
+```
+
+### GraphQL API Testing
+
+```json
+{
+  "target": {
+    "name": "graphql-api",
+    "baseUrl": "https://api.example.com/graphql",
+    "authentication": {
+      "type": "jwt",
+      "loginMutation": "mutation Login($email: String!, $password: String!) { login(email: $email, password: $password) { token user { id name } } }"
+    }
+  },
+  "agents": {
+    "count": 50,
+    "goals": [
+      "Query user profile and update preferences",
+      "Create and manage blog posts",
+      "Interact with social features"
+    ]
+  }
+}
+```
+
+## CLI Commands Reference
+
+### `create-ape-test`
+
+Create and configure a new APE load test environment.
+
+```bash
+npx create-ape-test [project-name] [options]
+```
+
+**Options:**
+- `-t, --template <type>` - Template type: rest-api, graphql (default: rest-api)
+- `-y, --yes` - Skip interactive prompts and use defaults
+- `-o, --output <path>` - Output directory for generated files (default: .)
+
+### `ape-test start`
+
+Start load test with specified number of agents.
+
+```bash
+ape-test start [options]
+```
+
+**Options:**
+- `-a, --agents <number>` - Number of concurrent agents (default: 10)
+- `-c, --config <path>` - Path to configuration file (default: ./ape.config.json)
+- `-d, --duration <minutes>` - Test duration in minutes (default: 5)
+
+### `ape-test status`
+
+Show current test status and metrics.
+
+```bash
+ape-test status [options]
+```
+
+**Options:**
+- `-w, --watch` - Watch mode for real-time updates
+
+### `ape-test logs`
+
+View logs from running services.
+
+```bash
+ape-test logs [options]
+```
+
+**Options:**
+- `-f, --follow` - Follow log output
+- `-s, --service <name>` - Filter logs by service name
+- `-g, --grep <pattern>` - Filter logs by pattern or trace ID
+- `-t, --tail <lines>` - Number of lines to show from end (default: 100)
+
+### `ape-test stop`
+
+Stop running load test and cleanup resources.
+
+```bash
+ape-test stop [options]
+```
+
+**Options:**
+- `-f, --force` - Force stop without graceful shutdown
+
+## Monitoring and Observability
+
+### Grafana Dashboards
+
+APE includes pre-configured Grafana dashboards accessible at http://localhost:3000:
+
+1. **APE Overview** - High-level metrics and system health
+2. **Agent Performance** - Individual agent metrics and behavior
+3. **Infrastructure** - Container and system resource usage
+4. **Real-time Monitoring** - Live agent activity and success rates
+5. **Trace Correlation** - Log correlation and debugging tools
+6. **Critical Alerts** - Alert status and threshold monitoring
+
+### Key Metrics to Monitor
+
+- **Successful Stateful Sessions (%)** - Primary success indicator
+- **Mean Time Between Actions (MTBA)** - Should be < 1 second
+- **Time-to-First-Token (TTFT)** - LLM inference latency
+- **Concurrent Active Agents** - Current load level
+- **Error Rate Distribution** - 2xx/4xx/5xx response patterns
+- **Resource Utilization** - CPU/Memory usage across containers
+
+### Log Correlation
+
+Use trace IDs to correlate events across the entire system:
+
+```bash
+# Find all events for a specific session
+ape-test logs --grep "trace-abc123"
+
+# Monitor specific agent behavior
+ape-test logs --service llama-agent --grep "agent-001"
+```
+
+### Performance Optimization
+
+#### Scaling Guidelines
+
+- **Start small:** Begin with 10-50 agents and scale up gradually
+- **Monitor resources:** Keep CPU usage below 80% and memory usage below 90%
+- **Network capacity:** Ensure sufficient bandwidth for agent traffic
+- **Target application:** Verify the SUT can handle the intended load
+
+#### Resource Requirements
+
+| Agent Count | Recommended CPU | Recommended RAM | Network |
+|-------------|----------------|-----------------|---------|
+| 1-50        | 4 cores        | 8 GB           | 100 Mbps |
+| 51-200      | 8 cores        | 16 GB          | 500 Mbps |
+| 201-500     | 16 cores       | 32 GB          | 1 Gbps  |
+| 500+        | 32+ cores      | 64+ GB         | 10 Gbps |
+
+## Acknowledgments
+
+- **Cerebras Systems** - For providing high-speed LLM inference capabilities
+- **LlamaIndex** - For the agent framework foundation
+- **Docker** - For containerization and orchestration
+- **Grafana Labs** - For the observability stack components
