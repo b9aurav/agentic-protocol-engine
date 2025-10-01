@@ -17,7 +17,7 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
   return {
     version: '3.8',
     services: {
-      // MCP Gateway Service - Requirements 6.2, 6.3
+      // MCP Gateway Service - Optimized for Requirements 6.2, 6.3, 6.4
       mcp_gateway: {
         image: 'ape/mcp-gateway:latest',
         container_name: `${config.projectName}_mcp_gateway`,
@@ -32,32 +32,61 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           RATE_LIMIT_ENABLED: 'true',
           CORS_ENABLED: 'true',
           METRICS_PORT: '8001',
-          METRICS_ENABLED: 'true'
+          METRICS_ENABLED: 'true',
+          // High-concurrency optimization
+          MAX_WORKERS: Math.min(4, Math.max(1, Math.ceil(config.agentCount / 250))),
+          CONNECTION_POOL_SIZE: Math.min(100, config.agentCount * 2),
+          KEEP_ALIVE_TIMEOUT: '5',
+          REQUEST_TIMEOUT: '30',
+          // Memory optimization
+          MEMORY_LIMIT_MB: config.agentCount > 500 ? '1024' : '512',
+          // Graceful shutdown
+          GRACEFUL_SHUTDOWN_TIMEOUT: '15'
         },
         volumes: [
           './ape.mcp-gateway.json:/app/config/mcp-gateway.json:ro'
         ],
         networks: [networkName],
         restart: 'unless-stopped',
+        // Optimized resource limits based on agent count
+        deploy: {
+          resources: {
+            limits: {
+              memory: config.agentCount > 500 ? '1G' : '512M',
+              cpus: config.agentCount > 500 ? '2.0' : '1.0'
+            },
+            reservations: {
+              memory: config.agentCount > 500 ? '512M' : '256M',
+              cpus: config.agentCount > 500 ? '1.0' : '0.5'
+            }
+          }
+        },
         healthcheck: {
           test: ['CMD', 'curl', '-f', 'http://localhost:3000/health'],
-          interval: '30s',
-          timeout: '10s',
+          interval: '15s',
+          timeout: '5s',
           retries: 3,
-          start_period: '40s'
+          start_period: '25s'
         },
         depends_on: ['cerebras_proxy'],
         logging: {
           driver: 'json-file',
           options: {
-            'max-size': '10m',
+            'max-size': '15m',
             'max-file': '3',
-            tag: `${config.projectName}_mcp_gateway`
+            tag: `${config.projectName}_mcp_gateway`,
+            'compress': 'true'
           }
-        }
+        },
+        labels: [
+          `ape.project=${config.projectName}`,
+          `ape.service=mcp-gateway`,
+          `ape.scale=${config.agentCount}`,
+          'ape.monitoring=enabled'
+        ]
       },
 
-      // Cerebras Proxy Service - Requirements 2.1, 2.3
+      // Cerebras Proxy Service - Optimized for Requirements 2.1, 2.3, 6.4
       cerebras_proxy: {
         image: 'ape/cerebras-proxy:latest',
         container_name: `${config.projectName}_cerebras_proxy`,
@@ -70,28 +99,56 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           MAX_CONCURRENT_REQUESTS: `${config.agentCount * 2}`, // Allow 2x agent count for burst
           TTFT_TARGET_MS: '500', // Target Time-to-First-Token in milliseconds
           REQUEST_TIMEOUT: '10000', // 10 second timeout for inference
-          RATE_LIMIT_PER_MINUTE: `${config.agentCount * 60}` // 60 requests per agent per minute
+          RATE_LIMIT_PER_MINUTE: `${config.agentCount * 60}`, // 60 requests per agent per minute
+          // High-performance optimization
+          CONNECTION_POOL_SIZE: Math.min(50, config.agentCount),
+          KEEP_ALIVE_CONNECTIONS: Math.min(20, Math.ceil(config.agentCount / 10)),
+          ASYNC_WORKERS: Math.min(4, Math.max(1, Math.ceil(config.agentCount / 100))),
+          // Memory optimization
+          MEMORY_LIMIT_MB: config.agentCount > 500 ? '768' : '512',
+          // Graceful shutdown
+          GRACEFUL_SHUTDOWN_TIMEOUT: '10'
         },
         networks: [networkName],
         restart: 'unless-stopped',
+        // Optimized resource limits based on agent count
+        deploy: {
+          resources: {
+            limits: {
+              memory: config.agentCount > 500 ? '768M' : '512M',
+              cpus: config.agentCount > 500 ? '1.5' : '1.0'
+            },
+            reservations: {
+              memory: config.agentCount > 500 ? '384M' : '256M',
+              cpus: config.agentCount > 500 ? '0.75' : '0.5'
+            }
+          }
+        },
         healthcheck: {
           test: ['CMD', 'curl', '-f', 'http://localhost:8000/health'],
-          interval: '30s',
-          timeout: '10s',
+          interval: '15s',
+          timeout: '5s',
           retries: 3,
-          start_period: '30s'
+          start_period: '20s'
         },
         logging: {
           driver: 'json-file',
           options: {
-            'max-size': '10m',
+            'max-size': '15m',
             'max-file': '3',
-            tag: `${config.projectName}_cerebras_proxy`
+            tag: `${config.projectName}_cerebras_proxy`,
+            'compress': 'true'
           }
-        }
+        },
+        labels: [
+          `ape.project=${config.projectName}`,
+          `ape.service=cerebras-proxy`,
+          `ape.scale=${config.agentCount}`,
+          'ape.monitoring=enabled'
+        ]
       },
 
-      // Llama Agent Service - Requirements 1.1, 6.1, 6.4
+      // Llama Agent Service - Optimized for Requirements 1.1, 6.1, 6.4
       llama_agent: {
         image: 'ape/llama-agent:latest',
         ports: ['8000'], // Expose metrics port for Prometheus scraping
@@ -106,6 +163,18 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           TARGET_ENDPOINTS: config.endpoints.join(','),
           METRICS_PORT: '8000', // Port for metrics endpoint
           METRICS_ENABLED: 'true',
+          // Optimization settings for high-scale deployments
+          AGENT_STARTUP_DELAY: Math.floor(Math.random() * 10), // Stagger startup 0-10s
+          AGENT_BATCH_SIZE: Math.min(config.agentCount, 50), // Process in batches
+          MEMORY_LIMIT_MB: agentResourceLimits.limits.memory.replace('M', ''),
+          CPU_LIMIT: agentResourceLimits.limits.cpus,
+          // Graceful shutdown configuration
+          GRACEFUL_SHUTDOWN_TIMEOUT: '10',
+          SHUTDOWN_SIGNAL_TIMEOUT: '5',
+          // Connection pooling optimization
+          HTTP_POOL_CONNECTIONS: '10',
+          HTTP_POOL_MAXSIZE: '20',
+          HTTP_RETRIES: '3',
           // Dynamic authentication configuration
           ...(config.authType !== 'none' && {
             AUTH_TYPE: config.authType,
@@ -128,21 +197,38 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
         deploy: {
           replicas: config.agentCount,
           resources: agentResourceLimits,
-          restart_policy: {
-            condition: 'on-failure',
-            delay: '5s',
-            max_attempts: 3,
-            window: '120s'
+          update_config: agentResourceLimits.update_config,
+          restart_policy: agentResourceLimits.restart_policy,
+          // Placement constraints for optimal resource distribution
+          placement: {
+            max_replicas_per_node: Math.max(1, Math.floor(100 / Math.sqrt(config.agentCount)))
           }
         },
+        // Optimized logging for high-scale deployments
         logging: {
           driver: 'json-file',
           options: {
-            'max-size': '10m',
-            'max-file': '3',
-            tag: `${config.projectName}_agent_{{.Name}}`
+            'max-size': config.agentCount > 100 ? '5m' : '10m',
+            'max-file': config.agentCount > 100 ? '2' : '3',
+            tag: `${config.projectName}_agent_{{.Name}}`,
+            'compress': 'true'
           }
-        }
+        },
+        // Health check optimized for faster detection
+        healthcheck: {
+          test: ['CMD', 'curl', '-f', 'http://localhost:8000/health'],
+          interval: '10s',
+          timeout: '3s',
+          retries: 2,
+          start_period: '15s'
+        },
+        // Resource monitoring labels
+        labels: [
+          `ape.project=${config.projectName}`,
+          `ape.service=llama-agent`,
+          `ape.scale=${config.agentCount}`,
+          'ape.monitoring=enabled'
+        ]
       },
 
       // Observability Stack - Requirements 4.1, 4.4, 4.5
@@ -565,27 +651,41 @@ export function generatePromtailConfig(_config: SetupAnswers): any {
   };
 }
 
-// Helper function to calculate agent resource limits based on agent count - Requirements 6.1, 6.4
+// Optimized resource calculation for Requirements 6.1, 6.4 - scaling to 1000+ agents
 function calculateAgentResources(agentCount: number): any {
-  // Scale resources based on agent count for optimal performance
+  // Dynamic resource allocation based on agent count and system capacity
   let memoryLimit = '512M';
   let cpuLimit = '0.5';
   let memoryReservation = '256M';
   let cpuReservation = '0.25';
-
-  if (agentCount > 100) {
-    // For high-scale deployments, reduce per-agent resources
+  
+  // Optimized resource scaling for high-density deployments
+  if (agentCount > 500) {
+    // Ultra-high scale: minimal per-agent resources for 1000+ agents
+    memoryLimit = '128M';
+    cpuLimit = '0.1';
+    memoryReservation = '64M';
+    cpuReservation = '0.05';
+  } else if (agentCount > 200) {
+    // High scale: reduced resources for 200-500 agents
+    memoryLimit = '192M';
+    cpuLimit = '0.15';
+    memoryReservation = '96M';
+    cpuReservation = '0.08';
+  } else if (agentCount > 100) {
+    // Medium-high scale: balanced resources for 100-200 agents
     memoryLimit = '256M';
     cpuLimit = '0.25';
     memoryReservation = '128M';
     cpuReservation = '0.1';
   } else if (agentCount > 50) {
-    // Medium scale
+    // Medium scale: standard resources for 50-100 agents
     memoryLimit = '384M';
     cpuLimit = '0.35';
     memoryReservation = '192M';
     cpuReservation = '0.15';
   }
+  // Default resources for <= 50 agents remain unchanged
 
   return {
     limits: {
@@ -595,6 +695,19 @@ function calculateAgentResources(agentCount: number): any {
     reservations: {
       memory: memoryReservation,
       cpus: cpuReservation
+    },
+    // Additional optimization settings
+    update_config: {
+      parallelism: Math.min(agentCount, 10), // Update max 10 agents at once
+      delay: '2s',
+      failure_action: 'rollback',
+      monitor: '10s'
+    },
+    restart_policy: {
+      condition: 'on-failure',
+      delay: '3s',
+      max_attempts: 3,
+      window: '60s'
     }
   };
 }
@@ -718,5 +831,117 @@ export function validateDockerComposeConfig(config: DockerComposeConfig): { vali
   return {
     valid: errors.length === 0,
     errors
+  };
+}
+
+// Graceful scaling and shutdown utilities for Requirements 6.1, 6.4
+export interface ScalingConfig {
+  currentAgents: number;
+  targetAgents: number;
+  maxConcurrentUpdates: number;
+  updateDelay: number;
+  healthCheckTimeout: number;
+}
+
+export function generateScalingStrategy(config: ScalingConfig): any {
+  const isScalingUp = config.targetAgents > config.currentAgents;
+  const agentDifference = Math.abs(config.targetAgents - config.currentAgents);
+  
+  // Calculate optimal batch size for scaling operations
+  const batchSize = Math.min(
+    config.maxConcurrentUpdates,
+    Math.max(1, Math.ceil(agentDifference / 10)) // Scale in 10% increments
+  );
+  
+  return {
+    strategy: isScalingUp ? 'scale-up' : 'scale-down',
+    batchSize,
+    totalBatches: Math.ceil(agentDifference / batchSize),
+    updateDelay: `${config.updateDelay}s`,
+    healthCheckTimeout: `${config.healthCheckTimeout}s`,
+    rollbackOnFailure: true,
+    // Scaling-specific configurations
+    ...(isScalingUp && {
+      // Scale up: start new containers gradually
+      parallelism: batchSize,
+      order: 'start-first'
+    }),
+    ...(!isScalingUp && {
+      // Scale down: stop containers gracefully
+      parallelism: Math.min(batchSize, 5), // Slower scale-down to prevent service disruption
+      order: 'stop-first',
+      gracefulShutdownTimeout: '15s'
+    })
+  };
+}
+
+export function generateGracefulShutdownConfig(agentCount: number): any {
+  // Calculate shutdown timeouts based on agent count
+  const baseTimeout = 10;
+  const scalingFactor = Math.ceil(agentCount / 100);
+  const shutdownTimeout = Math.min(baseTimeout + scalingFactor * 5, 60); // Max 60s
+  
+  return {
+    // Graceful shutdown configuration
+    stop_grace_period: `${shutdownTimeout}s`,
+    stop_signal: 'SIGTERM',
+    
+    // Health check during shutdown
+    healthcheck_during_shutdown: {
+      test: ['CMD', 'curl', '-f', 'http://localhost:8000/health'],
+      interval: '5s',
+      timeout: '3s',
+      retries: 2
+    },
+    
+    // Resource cleanup
+    cleanup_config: {
+      remove_volumes: false, // Preserve data volumes
+      remove_networks: false, // Keep networks for potential restart
+      force_kill_timeout: `${shutdownTimeout + 10}s`
+    }
+  };
+}
+
+// Resource monitoring configuration for Requirements 6.4
+export function generateResourceMonitoringConfig(agentCount: number): any {
+  return {
+    // Resource limits monitoring
+    resource_monitoring: {
+      enabled: true,
+      interval: '10s',
+      thresholds: {
+        memory_usage_percent: 85,
+        cpu_usage_percent: 80,
+        disk_usage_percent: 90
+      },
+      alerts: {
+        high_memory: agentCount > 100,
+        high_cpu: agentCount > 100,
+        container_restart: true
+      }
+    },
+    
+    // Agent scaling metrics
+    scaling_metrics: {
+      concurrent_agents: {
+        target: agentCount,
+        tolerance: 0.05, // 5% tolerance
+        measurement_window: '30s'
+      },
+      resource_utilization: {
+        memory_per_agent: agentCount > 500 ? '128M' : '256M',
+        cpu_per_agent: agentCount > 500 ? '0.1' : '0.25',
+        network_bandwidth: '10Mbps'
+      }
+    },
+    
+    // Performance optimization
+    performance_tuning: {
+      container_startup_stagger: Math.min(10, Math.ceil(agentCount / 50)), // Stagger startup
+      health_check_optimization: agentCount > 100,
+      log_compression: agentCount > 100,
+      metrics_sampling_rate: agentCount > 500 ? 0.1 : 1.0 // Sample 10% of metrics for large deployments
+    }
   };
 }

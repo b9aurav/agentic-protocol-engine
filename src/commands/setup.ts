@@ -5,6 +5,7 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as yaml from 'yaml';
 import { generateDockerCompose, generatePrometheusConfig, generatePromtailConfig } from '../templates/docker-compose';
+import { generateProductionOverride, generateProductionEnv } from '../templates/docker-compose.production';
 import { generateMCPGatewayConfig } from '../templates/mcp-gateway';
 
 interface SetupOptions {
@@ -351,6 +352,20 @@ async function generateConfigFiles(projectPath: string, config: SetupAnswers): P
   await fs.writeFile(
     path.join(projectPath, 'ape.docker-compose.yml'),
     yaml.stringify(dockerComposeConfig)
+  );
+
+  // Generate production-optimized Docker Compose override - Requirements 6.1, 6.4
+  const productionOverride = generateProductionOverride(config);
+  await fs.writeFile(
+    path.join(projectPath, 'ape.docker-compose.production.yml'),
+    yaml.stringify(productionOverride)
+  );
+
+  // Generate production environment file - Requirements 6.1, 6.4
+  const productionEnv = generateProductionEnv(config);
+  await fs.writeFile(
+    path.join(projectPath, '.env.production'),
+    productionEnv
   );
 
   // Create config directory for observability stack

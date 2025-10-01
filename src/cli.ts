@@ -6,6 +6,7 @@ import { startCommand } from './commands/start';
 import { stopCommand } from './commands/stop';
 import { statusCommand } from './commands/status';
 import { logsCommand } from './commands/logs';
+import { createScaleCommand } from './commands/scale';
 import { version } from '../package.json';
 
 const program = new Command();
@@ -47,6 +48,9 @@ program
   .option('-g, --grep <pattern>', 'Filter logs by pattern or trace ID')
   .option('-t, --tail <lines>', 'Number of lines to show from end', '100')
   .action(logsCommand);
+
+// Scale command - Requirements 6.1, 6.4
+program.addCommand(createScaleCommand());
 
 // Error handling
 program.on('command:*', () => {
