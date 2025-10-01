@@ -10,6 +10,10 @@ export interface DockerComposeConfig {
 export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig {
   const targetUrl = new URL(config.targetUrl);
   const networkName = `${config.projectName}_network`;
+  
+  // Dynamic scaling configuration based on user inputs - Requirements 6.1, 6.4
+  const agentResourceLimits = calculateAgentResources(config.agentCount);
+  const networkSubnet = generateNetworkSubnet(config.projectName);
 
   return {
     version: '3.8',
@@ -22,7 +26,12 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
         environment: {
           NODE_ENV: 'production',
           LOG_LEVEL: 'info',
-          CONFIG_PATH: '/app/config/mcp-gateway.json'
+          CONFIG_PATH: '/app/config/mcp-gateway.json',
+          PROJECT_NAME: config.projectName,
+          TARGET_URL: config.targetUrl,
+          MAX_CONCURRENT_AGENTS: `${config.agentCount}`,
+          RATE_LIMIT_ENABLED: 'true',
+          CORS_ENABLED: 'true'
         },
         volumes: [
           './ape.mcp-gateway.json:/app/config/mcp-gateway.json:ro'
@@ -36,7 +45,15 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           retries: 3,
           start_period: '40s'
         },
-        depends_on: ['cerebras_proxy']
+        depends_on: ['cerebras_proxy'],
+        logging: {
+          driver: 'json-file',
+          options: {
+            'max-size': '10m',
+            'max-file': '3',
+            tag: `${config.projectName}_mcp_gateway`
+          }
+        }
       },
 
       // Cerebras Proxy Service - Requirements 2.1, 2.3
@@ -47,7 +64,11 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
         environment: {
           CEREBRAS_API_KEY: '${CEREBRAS_API_KEY}',
           LOG_LEVEL: 'info',
-          METRICS_ENABLED: 'true'
+          METRICS_ENABLED: 'true',
+          MAX_CONCURRENT_REQUESTS: `${config.agentCount * 2}`, // Allow 2x agent count for burst
+          TTFT_TARGET_MS: '500', // Target Time-to-First-Token in milliseconds
+          REQUEST_TIMEOUT: '10000', // 10 second timeout for inference
+          RATE_LIMIT_PER_MINUTE: `${config.agentCount * 60}` // 60 requests per agent per minute
         },
         networks: [networkName],
         restart: 'unless-stopped',
@@ -57,6 +78,14 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           timeout: '10s',
           retries: 3,
           start_period: '30s'
+        },
+        logging: {
+          driver: 'json-file',
+          options: {
+            'max-size': '10m',
+            'max-file': '3',
+            tag: `${config.projectName}_cerebras_proxy`
+          }
         }
       },
 
@@ -68,7 +97,21 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           AGENT_GOAL: config.testGoal,
           TARGET_API_NAME: 'sut_api',
           LOG_LEVEL: 'info',
-          SESSION_TIMEOUT: '300'
+          SESSION_TIMEOUT: '300',
+          AGENT_ID: '${HOSTNAME}', // Dynamic agent identification
+          TEST_DURATION: `${config.testDuration}`,
+          TARGET_ENDPOINTS: config.endpoints.join(','),
+          // Dynamic authentication configuration
+          ...(config.authType !== 'none' && {
+            AUTH_TYPE: config.authType,
+            ...(config.authType === 'bearer' && config.authToken && {
+              AUTH_TOKEN: config.authToken
+            }),
+            ...(config.authType === 'basic' && config.authUsername && config.authPassword && {
+              AUTH_USERNAME: config.authUsername,
+              AUTH_PASSWORD: config.authPassword
+            })
+          })
         },
         networks: [networkName],
         restart: 'unless-stopped',
@@ -79,15 +122,20 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
         },
         deploy: {
           replicas: config.agentCount,
-          resources: {
-            limits: {
-              memory: '512M',
-              cpus: '0.5'
-            },
-            reservations: {
-              memory: '256M',
-              cpus: '0.25'
-            }
+          resources: agentResourceLimits,
+          restart_policy: {
+            condition: 'on-failure',
+            delay: '5s',
+            max_attempts: 3,
+            window: '120s'
+          }
+        },
+        logging: {
+          driver: 'json-file',
+          options: {
+            'max-size': '10m',
+            'max-file': '3',
+            tag: `${config.projectName}_agent_{{.Name}}`
           }
         }
       },
@@ -104,7 +152,19 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           'loki_data:/loki'
         ],
         networks: [networkName],
-        restart: 'unless-stopped'
+        restart: 'unless-stopped',
+        environment: {
+          LOKI_RETENTION_PERIOD: '168h', // 7 days
+          LOKI_MAX_CHUNK_AGE: '1h'
+        },
+        logging: {
+          driver: 'json-file',
+          options: {
+            'max-size': '10m',
+            'max-file': '3',
+            tag: `${config.projectName}_loki`
+          }
+        }
       },
 
       // Promtail for log collection
@@ -119,7 +179,19 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
         command: '-config.file=/etc/promtail/config.yml',
         networks: [networkName],
         restart: 'unless-stopped',
-        depends_on: ['loki']
+        depends_on: ['loki'],
+        environment: {
+          PROJECT_NAME: config.projectName,
+          LOKI_URL: 'http://loki:3100'
+        },
+        logging: {
+          driver: 'json-file',
+          options: {
+            'max-size': '5m',
+            'max-file': '2',
+            tag: `${config.projectName}_promtail`
+          }
+        }
       },
 
       // Prometheus for metrics collection
@@ -133,14 +205,27 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           '--web.console.libraries=/etc/prometheus/console_libraries',
           '--web.console.templates=/etc/prometheus/consoles',
           '--storage.tsdb.retention.time=200h',
-          '--web.enable-lifecycle'
+          '--web.enable-lifecycle',
+          '--web.enable-admin-api'
         ],
         volumes: [
           './config/prometheus.yml:/etc/prometheus/prometheus.yml:ro',
           'prometheus_data:/prometheus'
         ],
         networks: [networkName],
-        restart: 'unless-stopped'
+        restart: 'unless-stopped',
+        environment: {
+          PROJECT_NAME: config.projectName,
+          SCRAPE_INTERVAL: '15s'
+        },
+        logging: {
+          driver: 'json-file',
+          options: {
+            'max-size': '10m',
+            'max-file': '3',
+            tag: `${config.projectName}_prometheus`
+          }
+        }
       },
 
       // cAdvisor for container metrics
@@ -158,7 +243,20 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
         privileged: true,
         devices: ['/dev/kmsg'],
         networks: [networkName],
-        restart: 'unless-stopped'
+        restart: 'unless-stopped',
+        command: [
+          '--housekeeping_interval=10s',
+          '--docker_only=true',
+          '--disable_metrics=percpu,sched,tcp,udp,disk,diskIO,accelerator,hugetlb,referenced_memory,cpu_topology,resctrl'
+        ],
+        logging: {
+          driver: 'json-file',
+          options: {
+            'max-size': '5m',
+            'max-file': '2',
+            tag: `${config.projectName}_cadvisor`
+          }
+        }
       },
 
       // Node Exporter for host metrics
@@ -178,7 +276,15 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           '/:/rootfs:ro'
         ],
         networks: [networkName],
-        restart: 'unless-stopped'
+        restart: 'unless-stopped',
+        logging: {
+          driver: 'json-file',
+          options: {
+            'max-size': '5m',
+            'max-file': '2',
+            tag: `${config.projectName}_node_exporter`
+          }
+        }
       },
 
       // Grafana for visualization - Requirements 4.3, 4.6
@@ -189,7 +295,10 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
         environment: {
           GF_SECURITY_ADMIN_USER: 'admin',
           GF_SECURITY_ADMIN_PASSWORD: 'ape-admin',
-          GF_USERS_ALLOW_SIGN_UP: 'false'
+          GF_USERS_ALLOW_SIGN_UP: 'false',
+          GF_INSTALL_PLUGINS: 'grafana-piechart-panel,grafana-worldmap-panel',
+          GF_FEATURE_TOGGLES_ENABLE: 'traceqlEditor',
+          PROJECT_NAME: config.projectName
         },
         volumes: [
           'grafana_data:/var/lib/grafana',
@@ -198,7 +307,15 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
         ],
         networks: [networkName],
         restart: 'unless-stopped',
-        depends_on: ['prometheus', 'loki']
+        depends_on: ['prometheus', 'loki'],
+        logging: {
+          driver: 'json-file',
+          options: {
+            'max-size': '10m',
+            'max-file': '3',
+            tag: `${config.projectName}_grafana`
+          }
+        }
       }
     },
 
@@ -206,12 +323,19 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
     networks: {
       [networkName]: {
         driver: 'bridge',
+        name: `${config.projectName}_ape_network`,
         ipam: {
+          driver: 'default',
           config: [
             {
-              subnet: '172.20.0.0/16'
+              subnet: networkSubnet,
+              gateway: networkSubnet.replace('0.0/16', '0.1')
             }
           ]
+        },
+        driver_opts: {
+          'com.docker.network.bridge.name': `br-${config.projectName}`,
+          'com.docker.network.driver.mtu': '1500'
         }
       }
     },
@@ -349,5 +473,161 @@ export function generatePromtailConfig(config: SetupAnswers): any {
         ]
       }
     ]
+  };
+}
+
+// Helper function to calculate agent resource limits based on agent count - Requirements 6.1, 6.4
+function calculateAgentResources(agentCount: number): any {
+  // Scale resources based on agent count for optimal performance
+  let memoryLimit = '512M';
+  let cpuLimit = '0.5';
+  let memoryReservation = '256M';
+  let cpuReservation = '0.25';
+
+  if (agentCount > 100) {
+    // For high-scale deployments, reduce per-agent resources
+    memoryLimit = '256M';
+    cpuLimit = '0.25';
+    memoryReservation = '128M';
+    cpuReservation = '0.1';
+  } else if (agentCount > 50) {
+    // Medium scale
+    memoryLimit = '384M';
+    cpuLimit = '0.35';
+    memoryReservation = '192M';
+    cpuReservation = '0.15';
+  }
+
+  return {
+    limits: {
+      memory: memoryLimit,
+      cpus: cpuLimit
+    },
+    reservations: {
+      memory: memoryReservation,
+      cpus: cpuReservation
+    }
+  };
+}
+
+// Helper function to generate unique network subnet for each project - Requirements 6.3
+function generateNetworkSubnet(projectName: string): string {
+  // Generate a deterministic subnet based on project name hash
+  let hash = 0;
+  for (let i = 0; i < projectName.length; i++) {
+    const char = projectName.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  
+  // Use hash to generate a subnet in the 172.20-30.x.x range
+  const subnetBase = 20 + (Math.abs(hash) % 11); // 172.20.0.0 to 172.30.0.0
+  return `172.${subnetBase}.0.0/16`;
+}
+// Enhanced Docker Compose generation with environment specific configurations
+export function generateDockerComposeWithEnvironment(config: SetupAnswers, environment: 'development' | 'staging' | 'production' = 'production'): DockerComposeConfig {
+  const baseConfig = generateDockerCompose(config);
+  
+  // Apply environment-specific optimizations
+  switch (environment) {
+    case 'development':
+      return applyDevelopmentConfig(baseConfig, config);
+    case 'staging':
+      return applyStagingConfig(baseConfig, config);
+    case 'production':
+    default:
+      return applyProductionConfig(baseConfig, config);
+  }
+}
+
+function applyDevelopmentConfig(config: DockerComposeConfig, setupConfig: SetupAnswers): DockerComposeConfig {
+  // Development optimizations: faster startup, more verbose logging, hot reload
+  const devConfig = { ...config };
+  
+  // Enable debug logging for all services
+  Object.keys(devConfig.services).forEach(serviceName => {
+    const service = devConfig.services[serviceName];
+    if (service.environment) {
+      service.environment.LOG_LEVEL = 'debug';
+    }
+  });
+  
+  // Add development-specific volumes for hot reload
+  if (devConfig.services.mcp_gateway) {
+    devConfig.services.mcp_gateway.volumes = [
+      ...devConfig.services.mcp_gateway.volumes,
+      './src:/app/src:ro' // Hot reload for development
+    ];
+  }
+  
+  return devConfig;
+}
+
+function applyStagingConfig(config: DockerComposeConfig, setupConfig: SetupAnswers): DockerComposeConfig {
+  // Staging optimizations: production-like but with enhanced monitoring
+  const stagingConfig = { ...config };
+  
+  // Add staging-specific environment variables
+  Object.keys(stagingConfig.services).forEach(serviceName => {
+    const service = stagingConfig.services[serviceName];
+    if (service.environment) {
+      service.environment.ENVIRONMENT = 'staging';
+      service.environment.METRICS_DETAILED = 'true';
+    }
+  });
+  
+  return stagingConfig;
+}
+
+function applyProductionConfig(config: DockerComposeConfig, setupConfig: SetupAnswers): DockerComposeConfig {
+  // Production optimizations: security, performance, reliability
+  const prodConfig = { ...config };
+  
+  // Add production security headers and optimizations
+  Object.keys(prodConfig.services).forEach(serviceName => {
+    const service = prodConfig.services[serviceName];
+    if (service.environment) {
+      service.environment.ENVIRONMENT = 'production';
+      service.environment.SECURITY_HEADERS = 'true';
+    }
+    
+    // Add security options for production
+    service.security_opt = ['no-new-privileges:true'];
+    service.read_only = serviceName !== 'prometheus' && serviceName !== 'grafana' && serviceName !== 'loki'; // Allow writes only for data services
+  });
+  
+  return prodConfig;
+}
+
+// Utility function to validate Docker Compose configuration
+export function validateDockerComposeConfig(config: DockerComposeConfig): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  // Validate required services
+  const requiredServices = ['mcp_gateway', 'cerebras_proxy', 'llama_agent', 'prometheus', 'grafana'];
+  for (const service of requiredServices) {
+    if (!config.services[service]) {
+      errors.push(`Missing required service: ${service}`);
+    }
+  }
+  
+  // Validate network configuration
+  if (!config.networks || Object.keys(config.networks).length === 0) {
+    errors.push('No networks defined');
+  }
+  
+  // Validate volumes for data persistence
+  if (!config.volumes || !config.volumes.prometheus_data || !config.volumes.grafana_data) {
+    errors.push('Missing required persistent volumes');
+  }
+  
+  // Validate service dependencies
+  if (config.services.llama_agent && !config.services.llama_agent.depends_on) {
+    errors.push('llama_agent service missing required dependencies');
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors
   };
 }
