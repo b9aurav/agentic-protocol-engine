@@ -1,0 +1,5 @@
+# Docker configurations will be placed here
+# This directory will contain:
+# - Dockerfiles for each service
+# - Docker Compose templates
+# - Service-specific configurations
