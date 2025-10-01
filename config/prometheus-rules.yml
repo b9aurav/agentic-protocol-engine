@@ -1,0 +1,140 @@
+groups:
+  - name: ape_infrastructure_alerts
+    rules:
+      # High CPU usage alert
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 2m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80% for more than 2 minutes on {{ $labels.instance }}"
+
+      # High memory usage alert
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 2m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 85% for more than 2 minutes on {{ $labels.instance }}"
+
+      # Container down alert
+      - alert: ContainerDown
+        expr: up{job=~"ape-.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: ape
+        annotations:
+          summary: "APE service container is down"
+          description: "Container {{ $labels.job }} has been down for more than 1 minute"
+
+  - name: ape_agent_alerts
+    rules:
+      # High agent error rate
+      - alert: HighAgentErrorRate
+        expr: rate(ape_agent_errors_total[5m]) / rate(ape_agent_requests_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: ape-agent
+        annotations:
+          summary: "High error rate in APE agents"
+          description: "Agent error rate is above 10% for more than 2 minutes"
+
+      # Low successful session rate
+      - alert: LowSuccessfulSessionRate
+        expr: rate(ape_successful_sessions_total[5m]) / rate(ape_total_sessions_total[5m]) < 0.7
+        for: 3m
+        labels:
+          severity: warning
+          service: ape-agent
+        annotations:
+          summary: "Low successful session rate"
+          description: "Successful session rate is below 70% for more than 3 minutes"
+
+      # High TTFT (Time to First Token)
+      - alert: HighTTFT
+        expr: histogram_quantile(0.95, rate(ape_inference_ttft_seconds_bucket[5m])) > 2.0
+        for: 2m
+        labels:
+          severity: warning
+          service: cerebras-proxy
+        annotations:
+          summary: "High Time to First Token latency"
+          description: "95th percentile TTFT is above 2 seconds for more than 2 minutes"
+
+      # High MTBA (Mean Time Between Actions)
+      - alert: HighMTBA
+        expr: histogram_quantile(0.95, rate(ape_agent_mtba_seconds_bucket[5m])) > 1.0
+        for: 2m
+        labels:
+          severity: warning
+          service: ape-agent
+        annotations:
+          summary: "High Mean Time Between Actions"
+          description: "95th percentile MTBA is above 1 second for more than 2 minutes"
+
+  - name: ape_gateway_alerts
+    rules:
+      # High MCP Gateway error rate
+      - alert: HighGatewayErrorRate
+        expr: rate(ape_gateway_errors_total[5m]) / rate(ape_gateway_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: mcp-gateway
+        annotations:
+          summary: "High error rate in MCP Gateway"
+          description: "MCP Gateway error rate is above 5% for more than 2 minutes"
+
+      # High gateway response time
+      - alert: HighGatewayLatency
+        expr: histogram_quantile(0.95, rate(ape_gateway_request_duration_seconds_bucket[5m])) > 5.0
+        for: 2m
+        labels:
+          severity: warning
+          service: mcp-gateway
+        annotations:
+          summary: "High MCP Gateway latency"
+          description: "95th percentile gateway response time is above 5 seconds for more than 2 minutes"
+
+  - name: ape_system_alerts
+    rules:
+      # Too many concurrent agents
+      - alert: TooManyConcurrentAgents
+        expr: ape_concurrent_agents_count > 1000
+        for: 1m
+        labels:
+          severity: warning
+          service: ape-system
+        annotations:
+          summary: "High number of concurrent agents"
+          description: "Number of concurrent agents ({{ $value }}) exceeds recommended limit of 1000"
+
+      # Disk space running low
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+        for: 2m
+        labels:
+          severity: critical
+          service: infrastructure
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is below 10% on {{ $labels.instance }}"
+
+      # Container restart rate too high
+      - alert: HighContainerRestartRate
+        expr: rate(container_start_time_seconds[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: infrastructure
+        annotations:
+          summary: "High container restart rate"
+          description: "Container restart rate is above 0.1/sec for {{ $labels.name }}"

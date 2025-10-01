@@ -1,0 +1,208 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Docker container logs via Docker logging driver
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["logging=promtail"]
+    
+    relabel_configs:
+      # Extract container name
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container_name'
+      
+      # Extract service name from container labels
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'service_name'
+      
+      # Extract project name from container labels
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: 'project_name'
+      
+      # Set job label based on service
+      - source_labels: ['service_name']
+        target_label: 'job'
+      
+      # Extract trace_id from log lines for correlation
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: '__tmp_service'
+    
+    pipeline_stages:
+      # Parse JSON logs from services
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            message: message
+            trace_id: trace_id
+            session_id: session_id
+            agent_id: agent_id
+            service: service
+            request_id: request_id
+            status_code: status_code
+            execution_time: execution_time
+      
+      # Set timestamp from parsed JSON
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+      
+      # Add structured labels for filtering
+      - labels:
+          level:
+          trace_id:
+          session_id:
+          agent_id:
+          service:
+          status_code:
+      
+      # Template for log output formatting
+      - template:
+          source: message
+          template: '{{ .message }}'
+
+  # APE Agent logs with specific parsing
+  - job_name: ape-agents
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["com.docker.compose.service=llama-agent"]
+    
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container_name'
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'service_name'
+      - replacement: 'ape-agent'
+        target_label: 'job'
+    
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            message: message
+            trace_id: trace_id
+            session_id: session_id
+            agent_id: agent_id
+            tool_name: tool_name
+            goal: goal
+            step: step
+            success: success
+            error: error
+            ttft: ttft
+            tokens: tokens
+      
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+      
+      - labels:
+          level:
+          trace_id:
+          session_id:
+          agent_id:
+          tool_name:
+          success:
+
+  # MCP Gateway logs with request/response parsing
+  - job_name: mcp-gateway
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["com.docker.compose.service=mcp-gateway"]
+    
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container_name'
+      - replacement: 'mcp-gateway'
+        target_label: 'job'
+    
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            message: message
+            trace_id: trace_id
+            request_id: request_id
+            method: method
+            path: path
+            status_code: status_code
+            execution_time: execution_time
+            target_service: target_service
+            error: error
+      
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+      
+      - labels:
+          level:
+          trace_id:
+          request_id:
+          method:
+          status_code:
+          target_service:
+
+  # Cerebras Proxy logs with inference metrics
+  - job_name: cerebras-proxy
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["com.docker.compose.service=cerebras-proxy"]
+    
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container_name'
+      - replacement: 'cerebras-proxy'
+        target_label: 'job'
+    
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            message: message
+            trace_id: trace_id
+            request_id: request_id
+            ttft: ttft
+            total_tokens: total_tokens
+            input_tokens: input_tokens
+            output_tokens: output_tokens
+            cost_estimate: cost_estimate
+            model: model
+            status_code: status_code
+      
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+      
+      - labels:
+          level:
+          trace_id:
+          request_id:
+          model:
+          status_code:
