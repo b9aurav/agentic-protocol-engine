@@ -11,6 +11,7 @@ import structlog
 from llama_index.core.tools import BaseTool
 
 from models import MCPToolCall, HTTPMethod, ToolExecution
+from metrics import get_metrics_collector
 
 
 logger = structlog.get_logger(__name__)
@@ -33,7 +34,7 @@ class HTTPGetTool(BaseTool):
     
     def call(self, api_name: str, path: str, headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
         """
-        Execute HTTP GET request through MCP Gateway.
+        Execute HTTP GET request through MCP Gateway with performance tracking.
         
         Args:
             api_name: Target API name for MCP Gateway routing
@@ -44,7 +45,15 @@ class HTTPGetTool(BaseTool):
             Dict containing response data and metadata
         """
         trace_id = str(uuid.uuid4())
+        operation_id = f"http_get_{trace_id}"
         start_time = datetime.utcnow()
+        
+        # Start performance tracking
+        metrics_collector = get_metrics_collector()
+        session_id = getattr(kwargs, 'session_id', 'unknown')
+        
+        if metrics_collector:
+            metrics_collector.start_operation_tracking(operation_id, session_id, "http_get")
         
         # Create MCP-compliant tool call
         mcp_call = MCPToolCall(

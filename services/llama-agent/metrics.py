@@ -149,6 +149,10 @@ class AgentMetricsCollector:
         from session_tracker import SessionSuccessTracker
         self.session_tracker = SessionSuccessTracker(agent_id)
         
+        # Initialize performance validator
+        from performance_metrics import PerformanceValidator
+        self.performance_validator = PerformanceValidator(agent_id)
+        
         # Set agent information
         agent_info.info({
             'agent_id': agent_id,
@@ -325,13 +329,14 @@ class AgentMetricsCollector:
                 
                 self._last_action_time[session_id] = current_time
     
-    def record_inference_request(self, model: str, ttft: float):
+    def record_inference_request(self, model: str, ttft: float, operation_id: Optional[str] = None):
         """
-        Record an inference request and its Time-to-First-Token.
+        Record an inference request and its Time-to-First-Token with enhanced tracking.
         
         Args:
             model: Model name used for inference
             ttft: Time to First Token in seconds
+            operation_id: Optional operation ID for detailed performance tracking
         """
         agent_inference_requests.labels(
             agent_id=self.agent_id,
@@ -342,6 +347,11 @@ class AgentMetricsCollector:
             agent_id=self.agent_id,
             model=model
         ).observe(ttft)
+        
+        # Record in performance validator if operation_id provided
+        if operation_id:
+            # This would be called after TTFT is recorded in the performance validator
+            pass
     
     def record_error(self, error_type: str):
         """
@@ -397,6 +407,92 @@ class AgentMetricsCollector:
             Percentage of successful stateful sessions
         """
         return self.session_tracker.get_successful_stateful_sessions_percentage(time_window_minutes)
+    
+    def start_operation_tracking(self, operation_id: str, session_id: str, 
+                               operation_type: str = "generic"):
+        """
+        Start tracking performance for an operation.
+        
+        Args:
+            operation_id: Unique operation identifier
+            session_id: Session this operation belongs to
+            operation_type: Type of operation
+            
+        Returns:
+            OperationTiming object for detailed tracking
+        """
+        return self.performance_validator.start_operation(operation_id, session_id, operation_type)
+    
+    def record_inference_timing(self, operation_id: str, phase: str):
+        """
+        Record inference timing phases.
+        
+        Args:
+            operation_id: Operation ID
+            phase: Timing phase ('start', 'ttft', 'end')
+        """
+        if phase == "start":
+            self.performance_validator.record_inference_start(operation_id)
+        elif phase == "ttft":
+            self.performance_validator.record_inference_ttft(operation_id)
+        elif phase == "end":
+            self.performance_validator.record_inference_end(operation_id)
+    
+    def record_mcp_timing(self, operation_id: str, phase: str):
+        """
+        Record MCP Gateway timing phases.
+        
+        Args:
+            operation_id: Operation ID
+            phase: Timing phase ('start', 'end')
+        """
+        if phase == "start":
+            self.performance_validator.record_mcp_request_start(operation_id)
+        elif phase == "end":
+            self.performance_validator.record_mcp_request_end(operation_id)
+    
+    def record_sut_response(self, operation_id: str):
+        """
+        Record when SUT response is received.
+        
+        Args:
+            operation_id: Operation ID
+        """
+        self.performance_validator.record_sut_response(operation_id)
+    
+    def end_operation_tracking(self, operation_id: str):
+        """
+        End operation tracking and calculate metrics.
+        
+        Args:
+            operation_id: Operation ID to end
+            
+        Returns:
+            OperationTiming with calculated metrics
+        """
+        return self.performance_validator.end_operation(operation_id)
+    
+    def get_performance_metrics(self, time_window_minutes: int = 60) -> Dict[str, Any]:
+        """
+        Get comprehensive performance metrics.
+        
+        Args:
+            time_window_minutes: Time window to analyze
+            
+        Returns:
+            Dictionary with performance metrics
+        """
+        metrics = self.performance_validator.get_performance_metrics(time_window_minutes)
+        return metrics.to_dict()
+    
+    def validate_performance_targets(self) -> Dict[str, Any]:
+        """
+        Validate current performance against targets.
+        
+        Returns:
+            Dictionary with validation results
+        """
+        return self.performance_validator.validate_performance_targets()
     
     def cleanup(self):
         """Clean up metrics when agent shuts down."""

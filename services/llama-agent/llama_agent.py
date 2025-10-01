@@ -13,7 +13,7 @@ from llama_index.core.tools import BaseTool
 
 from agent_worker import StatefulAgentWorker
 from models import AgentConfig, AgentSessionContext
-from tools import HTTPGetTool, HTTPPostTool, HTTPPutTool, HTTPDeleteTool, StateUpdateTool
+from tools_enhanced import HTTPGetTool, HTTPPostTool, HTTPPutTool, HTTPDeleteTool, StateUpdateTool
 from metrics import initialize_metrics, get_metrics_collector
 
 
@@ -614,6 +614,27 @@ class LlamaAgent:
         """
         return self.metrics_collector.get_successful_stateful_sessions_percentage(time_window_minutes)
     
+    def get_performance_metrics(self, time_window_minutes: int = 60) -> Dict[str, Any]:
+        """
+        Get comprehensive performance validation metrics.
+        
+        Args:
+            time_window_minutes: Time window to analyze
+            
+        Returns:
+            Dictionary with performance metrics including MTBA and latency validation
+        """
+        return self.metrics_collector.get_performance_metrics(time_window_minutes)
+    
+    def validate_performance_targets(self) -> Dict[str, Any]:
+        """
+        Validate current performance against APE targets.
+        
+        Returns:
+            Dictionary with validation results for MTBA and cognitive latency
+        """
+        return self.metrics_collector.validate_performance_targets()
+    
     async def health_check(self) -> Dict[str, Any]:
         """Perform a health check of the agent with session metrics."""
         try:
@@ -629,6 +650,10 @@ class LlamaAgent:
         # Get recent session success metrics
         session_metrics = self.get_session_success_metrics(15)  # Last 15 minutes
         
+        # Get performance validation metrics
+        performance_metrics = self.get_performance_metrics(15)  # Last 15 minutes
+        performance_validation = self.validate_performance_targets()
+        
         return {
             "agent_id": self.config.agent_id,
             "llm_healthy": llm_healthy,
@@ -636,5 +661,9 @@ class LlamaAgent:
             "tools_count": len(self.tools),
             "status": "healthy" if llm_healthy else "unhealthy",
             "session_metrics": session_metrics,
-            "successful_stateful_sessions_percentage": session_metrics.get("successful_stateful_sessions_percentage", 0.0)
+            "performance_metrics": performance_metrics,
+            "performance_validation": performance_validation,
+            "successful_stateful_sessions_percentage": session_metrics.get("successful_stateful_sessions_percentage", 0.0),
+            "mtba_target_met": performance_validation.get("mtba_validation", {}).get("target_met", False),
+            "cognitive_latency_target_met": performance_validation.get("cognitive_latency_validation", {}).get("target_met", False)
         }
