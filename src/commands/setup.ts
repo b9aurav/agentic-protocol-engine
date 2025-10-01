@@ -519,7 +519,7 @@ ape-test start --agents 50
 - View service logs: \`docker-compose -f ape.docker-compose.yml logs [service_name]\`
 - Restart services: \`docker-compose -f ape.docker-compose.yml restart\`
 
-For more information, visit: https://github.com/ape-team/agentic-protocol-engine
+For more information, visit: https://github.com/b9aurav/agentic-protocol-engine
 `;
 
   await fs.writeFile(path.join(projectPath, 'README.md'), readme);

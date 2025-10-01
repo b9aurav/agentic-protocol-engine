@@ -3,20 +3,39 @@
   "version": "1.0.0",
   "description": "AI-driven load testing tool using intelligent LLM agents for realistic user behavior simulation",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
     "ape-test": "dist/cli.js",
     "create-ape-test": "dist/create.js"
   },
+  "files": [
+    "dist/**/*",
+    "config/**/*",
+    "docker/**/*",
+    "services/**/*",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "npm run clean && tsc && npm run copy-assets && npm run post-build",
+    "post-build": "node scripts/post-build.js",
+    "build:watch": "tsc --watch",
+    "copy-assets": "node -e \"const fs=require('fs-extra'); ['config','docker','services'].forEach(d=>fs.existsSync(d)&&fs.copySync(d,'dist/'+d))\"",
     "dev": "ts-node src/cli.ts",
     "start": "node dist/cli.js",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
-    "test": "jest",
+    "test": "jest --run",
     "test:watch": "jest --watch",
+    "test:ci": "jest --ci --coverage --watchAll=false",
     "clean": "rimraf dist",
-    "prepublishOnly": "npm run clean && npm run build"
+    "prepublishOnly": "npm run lint && npm run test:ci && npm run build",
+    "prepack": "npm run build",
+    "docker:build": "docker build -t agentic-protocol-engine:latest .",
+    "docker:publish": "npm run docker:build && docker tag agentic-protocol-engine:latest agentic-protocol-engine:$(npm pkg get version | tr -d '\"')",
+    "release:patch": "node scripts/release.js patch",
+    "release:minor": "node scripts/release.js minor",
+    "release:major": "node scripts/release.js major"
   },
   "keywords": [
     "load-testing",
@@ -55,10 +74,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ape-team/agentic-protocol-engine.git"
+    "url": "https://github.com/b9aurav/agentic-protocol-engine.git"
   },
   "bugs": {
-    "url": "https://github.com/ape-team/agentic-protocol-engine/issues"
+    "url": "https://github.com/b9aurav/agentic-protocol-engine/issues"
   },
-  "homepage": "https://github.com/ape-team/agentic-protocol-engine#readme"
+  "homepage": "https://github.com/b9aurav/agentic-protocol-engine#readme"
 }
