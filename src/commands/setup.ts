@@ -34,6 +34,7 @@ export interface SetupAnswers {
   authToken?: string;
   authUsername?: string;
   authPassword?: string;
+  cerebrasApiKey: string;
   agentCount: number;
   testDuration: number;
   testGoal: string;
@@ -60,11 +61,19 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
 
     if (options?.yes) {
       // Use defaults when --yes flag is provided
+      const cerebrasApiKey = process.env.CEREBRAS_API_KEY;
+      if (!cerebrasApiKey) {
+        console.error(chalk.red('❌ CEREBRAS_API_KEY environment variable is required when using --yes flag'));
+        console.log(chalk.yellow('Set it with: export CEREBRAS_API_KEY=your_api_key_here'));
+        process.exit(1);
+      }
+      
       answers = {
         projectName: projectName || 'my-ape-test',
         targetUrl: 'http://localhost:8080',
         targetPort: 8080,
         authType: 'none',
+        cerebrasApiKey,
         agentCount: 10,
         testDuration: 5,
         testGoal: 'Simulate realistic user browsing and interaction patterns',
@@ -197,6 +206,21 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
         ]);
       }
 
+      // Cerebras API key prompt
+      const cerebrasAnswers = await inquirer.prompt([
+        {
+          type: 'password',
+          name: 'cerebrasApiKey',
+          message: 'Cerebras API key (required for AI agents):',
+          validate: (input: string) => {
+            if (input.length === 0) return 'Cerebras API key is required';
+            if (input.length < 10) return 'Please enter a valid Cerebras API key';
+            return true;
+          },
+          mask: '*'
+        }
+      ]);
+
       // Test parameters prompts
       const testAnswers = await inquirer.prompt([
         {
@@ -319,6 +343,7 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
       answers = {
         ...basicAnswers,
         ...authAnswers,
+        ...cerebrasAnswers,
         ...testAnswers,
         ...endpointAnswers,
         customHeaders,
@@ -459,6 +484,9 @@ async function generateConfigFiles(projectPath: string, config: SetupAnswers): P
   dockerComposeYaml = dockerComposeYaml.replace(/\$?\{\{\.([^}]+)\}\}/g, '{{.$1}}');
   dockerComposeYaml = dockerComposeYaml.replace(/\$\{\.([^}]+)\}/g, '{{.$1}}');
 
+  // Fix double-escaped environment variables ($${ -> ${)
+  dockerComposeYaml = dockerComposeYaml.replace(/\$\$\{([A-Z_][A-Z0-9_]*)\}/g, '${$1}');
+
   await fs.writeFile(
     path.join(projectPath, 'ape.docker-compose.yml'),
     dockerComposeYaml
@@ -476,6 +504,9 @@ async function generateConfigFiles(projectPath: string, config: SetupAnswers): P
   // Fix Docker template variables that may have been corrupted
   productionOverrideYaml = productionOverrideYaml.replace(/\$?\{\{\.([^}]+)\}\}/g, '{{.$1}}');
   productionOverrideYaml = productionOverrideYaml.replace(/\$\{\.([^}]+)\}/g, '{{.$1}}');
+
+  // Fix double-escaped environment variables ($${ -> ${)
+  productionOverrideYaml = productionOverrideYaml.replace(/\$\$\{([A-Z_][A-Z0-9_]*)\}/g, '${$1}');
 
   await fs.writeFile(
     path.join(projectPath, 'ape.docker-compose.production.yml'),
@@ -559,7 +590,22 @@ async function generateConfigFiles(projectPath: string, config: SetupAnswers): P
     yaml.stringify(grafanaDashboards)
   );
 
-  // Generate environment file template
+  // Generate environment file with actual API key
+  const envFile = `# APE Environment Configuration
+# Generated automatically with your configuration
+
+# Cerebras API Configuration
+CEREBRAS_API_KEY=${config.cerebrasApiKey}
+
+# Optional: Custom configuration overrides
+# AGENT_SCALING_MAX=${config.agentCount * 2}
+# LOG_LEVEL=debug
+# METRICS_RETENTION=7d
+`;
+
+  await fs.writeFile(path.join(projectPath, '.env'), envFile);
+  
+  // Also generate template for reference
   const envTemplate = `# APE Environment Configuration
 # Copy this to .env and fill in your values
 
@@ -614,16 +660,12 @@ This project contains an AI-driven load testing setup that uses intelligent LLM 
 
 ## Prerequisites
 1. Docker and Docker Compose installed
-2. Cerebras API key (copy \`.env.template\` to \`.env\` and add your key)
+2. Cerebras API key (already configured during setup)
 
 ## Quick Start
 \`\`\`bash
-# 1. Set up environment
-cp .env.template .env
-# Edit .env and add your CEREBRAS_API_KEY
-
-# 2. Start the load test
-ape-test start --agents ${config.agentCount}
+# 1. Start the load test (API key already configured)
+docker-compose -f ape.docker-compose.yml --env-file .env up -d
 
 # 3. Monitor in real-time
 # - Grafana Dashboard: http://localhost:3001 (admin/ape-admin)

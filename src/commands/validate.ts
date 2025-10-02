@@ -96,6 +96,7 @@ async function validateConfigFile(configPath: string): Promise<ConfigValidationR
       authToken: configContent.target?.auth?.token,
       authUsername: configContent.target?.auth?.username,
       authPassword: configContent.target?.auth?.password,
+      cerebrasApiKey: 'configured', // Placeholder for validation
       agentCount: configContent.agents?.count || 1,
       testDuration: configContent.test?.duration || 5,
       testGoal: configContent.agents?.goal || '',
