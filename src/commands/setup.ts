@@ -13,10 +13,7 @@ import {
   generateApplicationSpecificConfig,
   generateApplicationDockerOverride
 } from '../templates/application-types';
-import {
-  validateConfiguration,
-  formatValidationResults
-} from '../utils/config-validator';
+
 
 interface SetupOptions {
   template: string;
@@ -30,31 +27,19 @@ export interface SetupAnswers {
   projectName: string;
   targetUrl: string;
   targetPort: number;
-  authType: string;
-  authToken?: string;
-  authUsername?: string;
-  authPassword?: string;
   cerebrasApiKey: string;
   agentCount: number;
   testDuration: number;
   testGoal: string;
   endpoints: string[];
-  customHeaders: Record<string, string>;
-  applicationType?: ApplicationType;
+  applicationType: ApplicationType;
 }
 
 export async function setupWizard(projectName?: string, options?: SetupOptions): Promise<void> {
   console.log(chalk.blue('🤖 Welcome to APE Setup Wizard!'));
   console.log(chalk.gray('This wizard will help you configure your AI-driven load test.\n'));
 
-  // Show available application templates
-  if (!options?.yes) {
-    console.log(chalk.cyan('📋 Available Application Templates:'));
-    Object.values(APPLICATION_TEMPLATES).forEach(template => {
-      console.log(chalk.gray(`  • ${template.name}: ${template.description}`));
-    });
-    console.log();
-  }
+
 
   try {
     let answers: SetupAnswers;
@@ -69,47 +54,26 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
       }
       
       answers = {
-        projectName: projectName || 'my-ape-test',
+        projectName: projectName || 'my-ape-load',
         targetUrl: 'http://localhost:8080',
         targetPort: 8080,
-        authType: 'none',
         cerebrasApiKey,
         agentCount: 10,
         testDuration: 5,
         testGoal: 'Simulate realistic user browsing and interaction patterns',
         endpoints: ['/api/health', '/api/users'],
-        customHeaders: {},
-        applicationType: options.applicationType || 'rest-api'
+        applicationType: 'rest-api'
       };
     } else {
       // Interactive prompts - Requirements 5.1, 5.2
-
-      // First, ask for application type to customize subsequent prompts
-      const appTypeAnswer = await inquirer.prompt([
-        {
-          type: 'list',
-          name: 'applicationType',
-          message: 'What type of application are you testing?',
-          choices: Object.values(APPLICATION_TEMPLATES).map(template => ({
-            name: `${template.name} - ${template.description}`,
-            value: template.type
-          })),
-          default: options?.applicationType || 'rest-api'
-        }
-      ]);
-
-      const selectedTemplate = APPLICATION_TEMPLATES[appTypeAnswer.applicationType as ApplicationType];
-
-      console.log(chalk.green(`\n✨ Selected: ${selectedTemplate.name}`));
-      console.log(chalk.gray(`Default endpoints: ${selectedTemplate.defaultEndpoints.join(', ')}`));
-      console.log(chalk.gray(`Supported auth types: ${selectedTemplate.authTypes.join(', ')}\n`));
+      const selectedTemplate = APPLICATION_TEMPLATES['rest-api'];
 
       const basicAnswers = await inquirer.prompt([
         {
           type: 'input',
           name: 'projectName',
           message: 'Project name:',
-          default: projectName || 'my-ape-test',
+          default: projectName || 'my-ape-load',
           validate: (input: string) => {
             if (input.length === 0) return 'Project name is required';
             if (!/^[a-zA-Z0-9-_]+$/.test(input)) return 'Project name can only contain letters, numbers, hyphens, and underscores';
@@ -151,60 +115,10 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
             }
             return true;
           }
-        },
-        {
-          type: 'list',
-          name: 'authType',
-          message: 'Authentication type:',
-          choices: selectedTemplate.authTypes.map(authType => {
-            const authLabels: Record<string, string> = {
-              'none': 'None (public endpoints)',
-              'bearer': 'Bearer Token (JWT/API Key)',
-              'basic': 'Basic Authentication',
-              'session': 'Session Cookies (login flow)',
-              'api-key': 'API Key (X-API-Key header)',
-              'oauth2': 'OAuth 2.0',
-              'mutual-tls': 'Mutual TLS',
-              'service-mesh': 'Service Mesh Authentication'
-            };
-            return {
-              name: authLabels[authType] || authType,
-              value: authType
-            };
-          }),
-          default: selectedTemplate.authTypes.includes('none') ? 'none' : selectedTemplate.authTypes[0]
         }
       ]);
 
-      // Conditional authentication prompts
-      let authAnswers = {};
-      if (basicAnswers.authType === 'bearer') {
-        authAnswers = await inquirer.prompt([
-          {
-            type: 'password',
-            name: 'authToken',
-            message: 'Bearer token (will be stored in config):',
-            validate: (input: string) => input.length > 0 || 'Bearer token is required',
-            mask: '*'
-          }
-        ]);
-      } else if (basicAnswers.authType === 'basic') {
-        authAnswers = await inquirer.prompt([
-          {
-            type: 'input',
-            name: 'authUsername',
-            message: 'Username:',
-            validate: (input: string) => input.length > 0 || 'Username is required'
-          },
-          {
-            type: 'password',
-            name: 'authPassword',
-            message: 'Password (will be stored in config):',
-            validate: (input: string) => input.length > 0 || 'Password is required',
-            mask: '*'
-          }
-        ]);
-      }
+
 
       // Cerebras API key prompt
       const cerebrasAnswers = await inquirer.prompt([
@@ -295,105 +209,18 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
         }
       ]);
 
-      // Custom headers configuration
-      const headerAnswers = await inquirer.prompt([
-        {
-          type: 'confirm',
-          name: 'hasCustomHeaders',
-          message: 'Add custom headers (e.g., Content-Type, User-Agent)?',
-          default: false
-        }
-      ]);
 
-      let customHeaders = {};
-      if (headerAnswers.hasCustomHeaders) {
-        const headerConfig = await inquirer.prompt([
-          {
-            type: 'input',
-            name: 'headerPairs',
-            message: 'Custom headers (format: "Key1:Value1,Key2:Value2"):',
-            validate: (input: string) => {
-              if (input.length === 0) return true; // Optional
-              const pairs = input.split(',');
-              for (const pair of pairs) {
-                if (!pair.includes(':')) {
-                  return 'Headers must be in format "Key:Value,Key2:Value2"';
-                }
-              }
-              return true;
-            },
-            filter: (input: string) => {
-              const headers: Record<string, string> = {};
-              if (input.length > 0) {
-                const pairs = input.split(',');
-                for (const pair of pairs) {
-                  const [key, ...valueParts] = pair.split(':');
-                  if (key && valueParts.length > 0) {
-                    headers[key.trim()] = valueParts.join(':').trim();
-                  }
-                }
-              }
-              return headers;
-            }
-          }
-        ]);
-        customHeaders = headerConfig.headerPairs;
-      }
 
       answers = {
         ...basicAnswers,
-        ...authAnswers,
         ...cerebrasAnswers,
         ...testAnswers,
         ...endpointAnswers,
-        customHeaders,
-        applicationType: appTypeAnswer.applicationType
+        applicationType: 'rest-api'
       };
     }
 
-    // Validate configuration before generating files - Requirements 8.4
-    if (options?.validate !== false) {
-      console.log(chalk.blue('\n🔍 Validating configuration...'));
-      const validationResult = validateConfiguration(answers, answers.applicationType);
 
-      if (!validationResult.valid) {
-        console.log(chalk.red('\n❌ Configuration validation failed:'));
-        console.log(formatValidationResults(validationResult));
-
-        const continueAnswer = await inquirer.prompt([
-          {
-            type: 'confirm',
-            name: 'continue',
-            message: 'Continue with invalid configuration?',
-            default: false
-          }
-        ]);
-
-        if (!continueAnswer.continue) {
-          console.log(chalk.yellow('Setup cancelled. Please fix the configuration issues and try again.'));
-          return;
-        }
-      } else if (validationResult.warnings.length > 0 || validationResult.suggestions.length > 0) {
-        console.log(chalk.yellow('\n⚠️  Configuration has warnings or suggestions:'));
-        console.log(formatValidationResults(validationResult));
-
-        const continueAnswer = await inquirer.prompt([
-          {
-            type: 'confirm',
-            name: 'continue',
-            message: 'Continue with this configuration?',
-            default: true
-          }
-        ]);
-
-        if (!continueAnswer.continue) {
-          console.log(chalk.yellow('Setup cancelled.'));
-          return;
-        }
-      } else {
-        console.log(chalk.green('✅ Configuration validation passed'));
-      }
-    }
 
     const spinner = ora('Generating configuration files...').start();
 
@@ -410,8 +237,8 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
     console.log(chalk.blue(`📁 Project directory: ${projectPath}`));
     console.log(chalk.yellow('\n🚀 Next steps:'));
     console.log(chalk.yellow(`   cd ${answers.projectName}`));
-    console.log(chalk.yellow('   ape-test start --agents 10'));
-    console.log(chalk.gray('\n💡 Use "ape-test --help" for more commands'));
+    console.log(chalk.yellow('   ape-load start'));
+    console.log(chalk.gray('\n💡 Use "ape-load --help" for more commands'));
 
   } catch (error) {
     console.error(chalk.red(`Setup failed: ${error instanceof Error ? error.message : 'Unknown error'}`));
@@ -430,11 +257,7 @@ async function generateConfigFiles(projectPath: string, config: SetupAnswers): P
     target: {
       url: config.targetUrl,
       port: config.targetPort,
-      endpoints: config.endpoints,
-      auth: {
-        type: config.authType
-      },
-      headers: config.customHeaders
+      endpoints: config.endpoints
     },
     agents: {
       count: config.agentCount,
@@ -461,13 +284,7 @@ async function generateConfigFiles(projectPath: string, config: SetupAnswers): P
     }
   };
 
-  // Add authentication details based on type
-  if (config.authType === 'bearer' && config.authToken) {
-    apeConfig.target.auth.token = config.authToken;
-  } else if (config.authType === 'basic' && config.authUsername && config.authPassword) {
-    apeConfig.target.auth.username = config.authUsername;
-    apeConfig.target.auth.password = config.authPassword;
-  }
+
 
   await fs.writeJSON(path.join(projectPath, 'ape.config.json'), apeConfig, { spaces: 2 });
 
@@ -626,8 +443,8 @@ CEREBRAS_API_KEY=your_cerebras_api_key_here
     : generateMCPGatewayConfig(config);
   await fs.writeJSON(path.join(projectPath, 'ape.mcp-gateway.json'), mcpGatewayConfig, { spaces: 2 });
 
-  // Generate application-specific Docker Compose override if applicable
-  if (config.applicationType && config.applicationType !== 'custom') {
+  // Generate application-specific Docker Compose override
+  if (config.applicationType) {
     const appDockerOverride = generateApplicationDockerOverride(config, config.applicationType);
     await fs.writeFile(
       path.join(projectPath, `ape.docker-compose.${config.applicationType}.yml`),
@@ -645,7 +462,7 @@ This project contains an AI-driven load testing setup that uses intelligent LLM 
 
 ## Configuration Summary
 - **Target Application**: ${config.targetUrl}
-- **Authentication**: ${config.authType}
+- **Authentication**: None (public API)
 - **Concurrent Agents**: ${config.agentCount}
 - **Test Duration**: ${config.testDuration} minutes
 - **Agent Goal**: ${config.testGoal}
@@ -673,14 +490,14 @@ docker-compose -f ape.docker-compose.yml --env-file .env up -d
 # - Container Metrics: http://localhost:8080
 
 # 4. View logs and traces
-ape-test logs --follow
-ape-test logs --grep "TRACE_ID_HERE"
+ape-load logs --follow
+ape-load logs --grep "TRACE_ID_HERE"
 
 # 5. Check status
-ape-test status
+ape-load status
 
 # 6. Stop the test
-ape-test stop
+ape-load stop
 \`\`\`
 
 ## Architecture
@@ -698,7 +515,7 @@ The system uses a three-tier architecture:
 ## Scaling
 \`\`\`bash
 # Scale agents dynamically
-ape-test start --agents 50
+ape-load start --agents 50
 
 # Maximum recommended: ${config.agentCount * 2} agents
 \`\`\`

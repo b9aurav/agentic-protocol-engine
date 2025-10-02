@@ -115,7 +115,7 @@ Table II: Llama Agent Pydantic Output Schema vs. MCP Input
 
 To ensure maximum accessibility and ease of use, APE is packaged as a command-line tool executable with `npx`. This approach abstracts away the underlying Docker Compose complexity, guiding the user through an interactive setup process.
 
-A user will initiate a new test setup by running a command like `npx create-ape-test`. This command triggers a setup wizard that asks for key configuration details (e.g., the target application's Docker image and port). It then generates the necessary configuration files, using the `ape.` prefix for clarity. The wizard can either generate default files or incorporate user-provided ones.
+A user will initiate a new test setup by running a command like `npx create-ape-load`. This command triggers a setup wizard that asks for key configuration details (e.g., the target application's Docker image and port). It then generates the necessary configuration files, using the `ape.` prefix for clarity. The wizard can either generate default files or incorporate user-provided ones.
 
 *   **`ape.docker-compose.yml`**: The main Docker Compose file defining all services.
 *   **`ape.mcp-gateway.json`**: The crucial routing configuration for the MCP Gateway, mapping logical `api_name` values to the actual service URLs.
@@ -138,11 +138,11 @@ The APE CLI provides simple, intuitive commands to manage the load test. These c
 
 Bash
 
-ape-test start --agents N
+ape-load start --agents N
 
 This command abstracts the underlying `docker-compose up --scale llama_agent=N -d` command, providing immediate and demonstrable load scaling. For instance, issuing
 
-`ape-test start --agents 1000` would immediately attempt to launch 1,000 stateful user sessions. The architectural goal is to define the maximum scale (N) that successfully stresses the SUT to its breaking point while maintaining the desired low Mean Time Between Actions (MTBA), proving the massive throughput capability of the underlying inference engine.
+`ape-load start --agents 1000` would immediately attempt to launch 1,000 stateful user sessions. The architectural goal is to define the maximum scale (N) that successfully stresses the SUT to its breaking point while maintaining the desired low Mean Time Between Actions (MTBA), proving the massive throughput capability of the underlying inference engine.
 
 ### **5.3 Automated Configuration and Logging**
 

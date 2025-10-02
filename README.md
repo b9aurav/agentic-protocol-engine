@@ -112,14 +112,14 @@ npm install -g agentic-protocol-engine
 Or use npx for one-time setup:
 
 ```bash
-npx create-ape-test my-load-test
+npx create-ape-load my-load-test
 ```
 
 ### Basic Usage
 
 1. **Create a new test project:**
    ```bash
-   npx create-ape-test my-api-test
+   npx create-ape-load my-api-test
    cd my-api-test
    ```
 
@@ -131,19 +131,19 @@ npx create-ape-test my-load-test
 
 3. **Start the load test:**
    ```bash
-   ape-test start --agents 50 --duration 10
+   ape-load start --agents 50 --duration 10
    ```
 
 4. **Monitor in real-time:**
    ```bash
    # View live status
-   ape-test status --watch
+   ape-load status --watch
    
    # Follow logs
-   ape-test logs --follow
+   ape-load logs --follow
    
    # Filter by trace ID
-   ape-test logs --grep "trace-12345"
+   ape-load logs --grep "trace-12345"
    ```
 
 5. **Access Grafana dashboards:**
@@ -151,7 +151,7 @@ npx create-ape-test my-load-test
 
 6. **Stop the test:**
    ```bash
-   ape-test stop
+   ape-load stop
    ```
 
 ## Configuration Examples
@@ -187,15 +187,7 @@ npx create-ape-test my-load-test
 }
 ```
 
-### GraphQL API Testing
 
-```json
-{
-  "target": {
-    "name": "graphql-api",
-    "baseUrl": "https://api.example.com/graphql",
-    "authentication": {
-      "type": "jwt",
       "loginMutation": "mutation Login($email: String!, $password: String!) { login(email: $email, password: $password) { token user { id name } } }"
     }
   },
@@ -212,25 +204,25 @@ npx create-ape-test my-load-test
 
 ## CLI Commands Reference
 
-### `create-ape-test`
+### `create-ape-load`
 
 Create and configure a new APE load test environment.
 
 ```bash
-npx create-ape-test [project-name] [options]
+npx create-ape-load [project-name] [options]
 ```
 
 **Options:**
-- `-t, --template <type>` - Template type: rest-api, graphql (default: rest-api)
+- `-t, --template <type>` - Template type: rest-api (default: rest-api)
 - `-y, --yes` - Skip interactive prompts and use defaults
 - `-o, --output <path>` - Output directory for generated files (default: .)
 
-### `ape-test start`
+### `ape-load start`
 
 Start load test with specified number of agents.
 
 ```bash
-ape-test start [options]
+ape-load start [options]
 ```
 
 **Options:**
@@ -238,23 +230,23 @@ ape-test start [options]
 - `-c, --config <path>` - Path to configuration file (default: ./ape.config.json)
 - `-d, --duration <minutes>` - Test duration in minutes (default: 5)
 
-### `ape-test status`
+### `ape-load status`
 
 Show current test status and metrics.
 
 ```bash
-ape-test status [options]
+ape-load status [options]
 ```
 
 **Options:**
 - `-w, --watch` - Watch mode for real-time updates
 
-### `ape-test logs`
+### `ape-load logs`
 
 View logs from running services.
 
 ```bash
-ape-test logs [options]
+ape-load logs [options]
 ```
 
 **Options:**
@@ -263,12 +255,12 @@ ape-test logs [options]
 - `-g, --grep <pattern>` - Filter logs by pattern or trace ID
 - `-t, --tail <lines>` - Number of lines to show from end (default: 100)
 
-### `ape-test stop`
+### `ape-load stop`
 
 Stop running load test and cleanup resources.
 
 ```bash
-ape-test stop [options]
+ape-load stop [options]
 ```
 
 **Options:**
@@ -302,10 +294,10 @@ Use trace IDs to correlate events across the entire system:
 
 ```bash
 # Find all events for a specific session
-ape-test logs --grep "trace-abc123"
+ape-load logs --grep "trace-abc123"
 
 # Monitor specific agent behavior
-ape-test logs --service llama-agent --grep "agent-001"
+ape-load logs --service llama-agent --grep "agent-001"
 ```
 
 ### Performance Optimization

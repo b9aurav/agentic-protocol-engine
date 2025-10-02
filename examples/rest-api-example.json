@@ -6,15 +6,13 @@
     "projectName": "ecommerce-api-test",
     "targetUrl": "https://api.ecommerce.example.com",
     "targetPort": 443,
-    "authType": "bearer",
-    "authToken": "your_jwt_token_here",
+
     "agentCount": 50,
     "testDuration": 15,
     "testGoal": "Simulate realistic e-commerce user journeys including browsing products, adding to cart, and completing purchases",
     "endpoints": [
       "/api/v1/health",
-      "/api/v1/auth/login",
-      "/api/v1/auth/logout",
+
       "/api/v1/products",
       "/api/v1/products/{id}",
       "/api/v1/cart",
@@ -24,25 +22,18 @@
       "/api/v1/users/profile",
       "/api/v1/users/addresses"
     ],
-    "customHeaders": {
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-      "User-Agent": "APE-LoadTest/1.0",
-      "X-Client-Version": "1.0.0"
-    }
+
   },
   "expectedBehavior": {
-    "authentication": "Bearer token authentication with JWT",
-    "sessionManagement": "Stateless API with token-based authentication",
+    "authentication": "None (public API)",
+    "sessionManagement": "Stateless public API",
     "typicalUserFlow": [
-      "Login to get JWT token",
       "Browse product catalog",
       "Search for specific products",
-      "Add products to cart",
-      "Update cart quantities",
-      "Proceed to checkout",
-      "Complete order",
-      "View order history"
+      "View product details",
+      "Check product availability",
+      "Browse categories",
+      "View user profiles (public data)"
     ],
     "performanceTargets": {
       "averageResponseTime": "< 200ms",

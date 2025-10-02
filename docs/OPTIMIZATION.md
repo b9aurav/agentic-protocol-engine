@@ -55,19 +55,19 @@ APE automatically adjusts resource limits based on the number of agents:
 #### Scaling Up
 ```bash
 # Scale to 500 agents gradually
-ape-test scale --agents 500 --strategy gradual
+ape-load scale --agents 500 --strategy gradual
 
 # Scale immediately for urgent testing
-ape-test scale --agents 100 --strategy immediate --force
+ape-load scale --agents 100 --strategy immediate --force
 ```
 
 #### Scaling Down
 ```bash
 # Scale down with graceful shutdown
-ape-test scale --agents 50 --strategy gradual
+ape-load scale --agents 50 --strategy gradual
 
 # Check scaling plan without executing
-ape-test scale --agents 200 --dry-run
+ape-load scale --agents 200 --dry-run
 ```
 
 #### Rolling Updates
@@ -99,7 +99,7 @@ docker-compose up -d
 #### Real-Time Monitoring
 ```bash
 # Start resource monitoring
-python scripts/resource-monitor.py --project my-ape-test --interval 10
+python scripts/resource-monitor.py --project my-ape-load --interval 10
 
 # Monitor with JSON output
 python scripts/resource-monitor.py --output /tmp/ape-metrics.json --no-console
@@ -230,7 +230,7 @@ total_cpu_needed = total_agent_cpu + service_cpu_overhead
 docker stats
 
 # Scale down agents
-ape-test scale --agents 100
+ape-load scale --agents 100
 
 # Check system memory
 free -h
@@ -239,7 +239,7 @@ free -h
 #### 2. Slow Startup Times
 ```bash
 # Check container logs
-ape-test logs --service llama_agent --tail 50
+ape-load logs --service llama_agent --tail 50
 
 # Monitor resource usage during startup
 python scripts/resource-monitor.py --interval 5
@@ -251,7 +251,7 @@ python scripts/resource-monitor.py --interval 5
 docker stats --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
 
 # Reduce agent count if needed
-ape-test scale --agents 200
+ape-load scale --agents 200
 ```
 
 ### Performance Tuning
@@ -308,7 +308,7 @@ Pre-configured alerts:
 
 1. **Generate Production Configuration**:
    ```bash
-   npx create-ape-test my-production-test
+   npx create-ape-load my-production-test
    # Configuration includes production optimizations automatically
    ```
 

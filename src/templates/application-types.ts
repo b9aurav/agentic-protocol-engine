@@ -1,18 +1,15 @@
 import { SetupAnswers } from '../commands/setup';
 import { MCPGatewayConfig, RouteConfig, EndpointConfig } from './mcp-gateway';
 
-export type ApplicationType = 'rest-api' | 'graphql' | 'microservices' | 'custom';
+export type ApplicationType = 'rest-api';
 
 export interface ApplicationTemplate {
     type: ApplicationType;
     name: string;
     description: string;
     defaultEndpoints: string[];
-    authTypes: string[];
-    commonHeaders: Record<string, string>;
     healthCheckPath: string;
     metricsPath?: string;
-    specialConfig?: any;
 }
 
 export interface ValidationResult {
@@ -32,80 +29,16 @@ export const APPLICATION_TEMPLATES: Record<ApplicationType, ApplicationTemplate>
             '/api/v1/users',
             '/api/v1/products',
             '/api/v1/orders',
-            '/api/v1/auth/login',
-            '/api/v1/auth/logout'
+
         ],
-        authTypes: ['bearer', 'basic', 'session', 'api-key'],
-        commonHeaders: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'APE-LoadTest/1.0'
-        },
+
         healthCheckPath: '/api/health',
         metricsPath: '/api/metrics'
     },
 
-    'graphql': {
-        type: 'graphql',
-        name: 'GraphQL API Application',
-        description: 'GraphQL API with queries, mutations, and subscriptions',
-        defaultEndpoints: [
-            '/graphql',
-            '/health',
-            '/metrics'
-        ],
-        authTypes: ['bearer', 'session', 'api-key'],
-        commonHeaders: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'APE-LoadTest/1.0'
-        },
-        healthCheckPath: '/health',
-        metricsPath: '/metrics',
-        specialConfig: {
-            introspectionEnabled: true,
-            playgroundEnabled: false, // Disabled in production
-            maxQueryDepth: 10,
-            maxQueryComplexity: 1000
-        }
-    },
-
-    'microservices': {
-        type: 'microservices',
-        name: 'Microservices Architecture',
-        description: 'Multiple interconnected microservices with service discovery',
-        defaultEndpoints: [
-            '/api/gateway/health',
-            '/api/user-service/users',
-            '/api/product-service/products',
-            '/api/order-service/orders',
-            '/api/auth-service/login',
-            '/api/notification-service/notifications'
-        ],
-        authTypes: ['bearer', 'service-mesh', 'mutual-tls'],
-        commonHeaders: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'APE-LoadTest/1.0',
-            'X-Service-Name': 'ape-load-test'
-        },
-        healthCheckPath: '/api/gateway/health',
-        metricsPath: '/api/gateway/metrics'
-    },
 
 
 
-    'custom': {
-        type: 'custom',
-        name: 'Custom Application',
-        description: 'Custom application configuration',
-        defaultEndpoints: ['/health'],
-        authTypes: ['none', 'bearer', 'basic', 'session', 'api-key', 'oauth2', 'mutual-tls'],
-        commonHeaders: {
-            'User-Agent': 'APE-LoadTest/1.0'
-        },
-        healthCheckPath: '/health'
-    }
 };
 
 // Generate application-specific MCP Gateway configuration
@@ -141,7 +74,7 @@ export function generateApplicationSpecificConfig(
         base_url: config.targetUrl,
         timeout: getApplicationTimeout(applicationType),
         retry_policy: getApplicationRetryPolicy(applicationType),
-        auth: generateApplicationAuth(config, template),
+
         endpoints: endpoints,
         health_check: {
             enabled: true,
@@ -212,17 +145,7 @@ export function generateApplicationSpecificConfig(
         }
     };
 
-    // Add application-specific headers
-    const mergedHeaders = { ...template.commonHeaders, ...config.customHeaders };
-    if (Object.keys(mergedHeaders).length > 0) {
-        if (!mcpConfig.routes.sut_api.auth) {
-            mcpConfig.routes.sut_api.auth = { type: 'none' };
-        }
-        if (!mcpConfig.routes.sut_api.auth.headers) {
-            mcpConfig.routes.sut_api.auth.headers = {};
-        }
-        Object.assign(mcpConfig.routes.sut_api.auth.headers, mergedHeaders);
-    }
+
 
     return mcpConfig;
 }
@@ -231,23 +154,9 @@ export function generateApplicationSpecificConfig(
 function determineHttpMethods(endpoint: string, applicationType: ApplicationType): string[] {
     const path = endpoint.toLowerCase();
 
-    // GraphQL typically uses POST for all operations
-    if (applicationType === 'graphql') {
-        return path.includes('graphql') ? ['POST'] : ['GET'];
-    }
-
     // Health and metrics endpoints are typically GET only
     if (path.includes('health') || path.includes('metrics') || path.includes('status')) {
         return ['GET'];
-    }
-
-    // Authentication endpoints
-    if (path.includes('login') || path.includes('auth') || path.includes('token')) {
-        return ['POST'];
-    }
-
-    if (path.includes('logout')) {
-        return ['POST', 'DELETE'];
     }
 
 
@@ -260,20 +169,13 @@ function determineHttpMethods(endpoint: string, applicationType: ApplicationType
 function generateEndpointDescription(endpoint: string, applicationType: ApplicationType): string {
     const path = endpoint.toLowerCase();
 
-    if (applicationType === 'graphql' && path.includes('graphql')) {
-        return 'GraphQL endpoint for queries, mutations, and subscriptions';
-    }
-
     if (path.includes('health')) return 'Application health check endpoint';
     if (path.includes('metrics')) return 'Prometheus metrics endpoint';
-    if (path.includes('login')) return 'User authentication endpoint';
-    if (path.includes('logout')) return 'User logout endpoint';
+
     if (path.includes('users')) return 'User management API endpoint';
     if (path.includes('products')) return 'Product catalog API endpoint';
     if (path.includes('orders')) return 'Order management API endpoint';
     if (path.includes('notifications')) return 'Notification service endpoint';
-
-
 
     return `API endpoint: ${endpoint}`;
 }
@@ -282,22 +184,12 @@ function generateEndpointDescription(endpoint: string, applicationType: Applicat
 function generateEndpointRateLimit(endpoint: string, applicationType: ApplicationType): { windowMs: number; max: number } {
     const path = endpoint.toLowerCase();
 
-    // Authentication endpoints need stricter rate limiting
-    if (path.includes('login') || path.includes('auth')) {
-        return { windowMs: 60000, max: 10 }; // 10 requests per minute
-    }
+
 
     // Health checks can be more frequent
     if (path.includes('health') || path.includes('metrics')) {
         return { windowMs: 60000, max: 200 };
     }
-
-    // GraphQL endpoints may need higher limits due to complex queries
-    if (applicationType === 'graphql') {
-        return { windowMs: 60000, max: 150 };
-    }
-
-
 
     // Default rate limit
     return { windowMs: 60000, max: 100 };
@@ -305,129 +197,24 @@ function generateEndpointRateLimit(endpoint: string, applicationType: Applicatio
 
 // Get application-specific timeout values
 function getApplicationTimeout(applicationType: ApplicationType): number {
-    switch (applicationType) {
-        case 'graphql':
-            return 45000; // GraphQL queries can be complex
-        case 'microservices':
-            return 60000; // Service-to-service calls may take longer
-
-        default:
-            return 30000; // Standard REST API timeout
-    }
+    return 30000; // Standard REST API timeout
 }
 
 // Get application-specific retry policies
 function getApplicationRetryPolicy(applicationType: ApplicationType): RouteConfig['retry_policy'] {
-    switch (applicationType) {
-        case 'graphql':
-            return {
-                max_retries: 2, // GraphQL errors are often query-related, fewer retries
-                backoff_factor: 1.5,
-                retry_on: [502, 503, 504, 408]
-            };
-        case 'microservices':
-            return {
-                max_retries: 4, // Microservices may have transient failures
-                backoff_factor: 2.0,
-                retry_on: [502, 503, 504, 408, 429]
-            };
-
-        default:
-            return {
-                max_retries: 3,
-                backoff_factor: 1.5,
-                retry_on: [502, 503, 504, 408, 429]
-            };
-    }
+    return {
+        max_retries: 3,
+        backoff_factor: 1.5,
+        retry_on: [502, 503, 504, 408, 429]
+    };
 }
 
 // Get application-specific rate limits based on agent count
 function getApplicationRateLimit(applicationType: ApplicationType, agentCount: number): number {
-    const baseLimit = agentCount * 10; // 10 requests per agent per minute
-
-    switch (applicationType) {
-        case 'graphql':
-            return Math.floor(baseLimit * 0.7); // GraphQL queries are more expensive
-        case 'microservices':
-            return Math.floor(baseLimit * 1.5); // Microservices may generate more traffic
-
-        default:
-            return baseLimit;
-    }
+    return agentCount * 10; // 10 requests per agent per minute
 }
 
-// Generate application-specific authentication configuration
-function generateApplicationAuth(config: SetupAnswers, template: ApplicationTemplate): RouteConfig['auth'] | undefined {
-    if (config.authType === 'none') {
-        return undefined;
-    }
 
-    // Validate that the auth type is supported by the application template
-    if (!template.authTypes.includes(config.authType)) {
-        throw new Error(
-            `Authentication type '${config.authType}' is not supported for ${template.name}. ` +
-            `Supported types: ${template.authTypes.join(', ')}`
-        );
-    }
-
-    switch (config.authType) {
-        case 'bearer':
-            if (!config.authToken) {
-                throw new Error('Bearer token is required for bearer authentication');
-            }
-            return {
-                type: 'bearer',
-                headers: {
-                    'Authorization': `Bearer ${config.authToken}`
-                },
-                credentials: {
-                    token: config.authToken
-                }
-            };
-
-        case 'basic': {
-            if (!config.authUsername || !config.authPassword) {
-                throw new Error('Username and password are required for basic authentication');
-            }
-            const basicAuth = Buffer.from(`${config.authUsername}:${config.authPassword}`).toString('base64');
-            return {
-                type: 'basic',
-                headers: {
-                    'Authorization': `Basic ${basicAuth}`
-                },
-                credentials: {
-                    username: config.authUsername,
-                    password: config.authPassword
-                }
-            };
-        }
-
-        case 'session':
-            return {
-                type: 'session',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            };
-
-        case 'api-key':
-            if (!config.authToken) {
-                throw new Error('API key is required for API key authentication');
-            }
-            return {
-                type: 'api-key',
-                headers: {
-                    'X-API-Key': config.authToken
-                },
-                credentials: {
-                    token: config.authToken
-                }
-            };
-
-        default:
-            throw new Error(`Unsupported authentication type: ${config.authType}`);
-    }
-}
 
 // Validate configuration for specific application type - Requirements 8.4
 export function validateApplicationConfig(
@@ -458,35 +245,7 @@ export function validateApplicationConfig(
         errors.push(`Invalid target URL: ${config.targetUrl}`);
     }
 
-    // Validate authentication configuration
-    if (config.authType && config.authType !== 'none') {
-        if (!template.authTypes.includes(config.authType)) {
-            errors.push(
-                `Authentication type '${config.authType}' is not supported for ${template.name}. ` +
-                `Supported types: ${template.authTypes.join(', ')}`
-            );
-        }
 
-        // Validate auth credentials
-        switch (config.authType) {
-            case 'bearer':
-            case 'api-key':
-                if (!config.authToken || config.authToken.trim().length === 0) {
-                    errors.push(`${config.authType === 'bearer' ? 'Bearer token' : 'API key'} is required but not provided`);
-                } else if (config.authToken.length < 10) {
-                    warnings.push(`${config.authType === 'bearer' ? 'Bearer token' : 'API key'} seems too short. Ensure it's a valid token.`);
-                }
-                break;
-            case 'basic':
-                if (!config.authUsername || config.authUsername.trim().length === 0) {
-                    errors.push('Username is required for basic authentication');
-                }
-                if (!config.authPassword || config.authPassword.trim().length === 0) {
-                    errors.push('Password is required for basic authentication');
-                }
-                break;
-        }
-    }
 
     // Validate endpoints for application type
     if (config.endpoints.length === 0) {
@@ -498,21 +257,13 @@ export function validateApplicationConfig(
                 errors.push(`Endpoint '${endpoint}' must start with '/'`);
             }
 
-            // Application-specific endpoint validation
-            if (applicationType === 'graphql') {
-                if (!config.endpoints.some(ep => ep.toLowerCase().includes('graphql'))) {
-                    warnings.push('GraphQL applications typically need a /graphql endpoint');
-                }
-            }
+
 
 
         }
     }
 
-    // Validate agent count for application type
-    if (applicationType === 'graphql' && config.agentCount > 200) {
-        warnings.push('GraphQL applications may not handle very high concurrent loads well. Consider starting with fewer agents.');
-    }
+
 
 
 
@@ -523,14 +274,9 @@ export function validateApplicationConfig(
         errors.push('Test duration cannot exceed 24 hours (1440 minutes)');
     }
 
-    // Application-specific warnings
-    if (applicationType === 'microservices') {
-        warnings.push('Microservices testing may require additional service discovery configuration. Ensure all service endpoints are accessible.');
-    }
 
-    if (applicationType === 'graphql' && !config.customHeaders['Content-Type']) {
-        warnings.push('GraphQL applications typically require Content-Type: application/json header');
-    }
+
+
 
     return {
         valid: errors.length === 0,
@@ -564,26 +310,15 @@ export function generateApplicationDockerOverride(
     overrides.services.llama_agent = {
         environment: {
             APPLICATION_TYPE: applicationType,
-            DEFAULT_ENDPOINTS: template.defaultEndpoints.join(','),
-            SUPPORTED_AUTH_TYPES: template.authTypes.join(',')
+            DEFAULT_ENDPOINTS: template.defaultEndpoints.join(',')
         }
     };
 
-    // GraphQL-specific configuration
-    if (applicationType === 'graphql') {
-        overrides.services.mcp_gateway.environment.GRAPHQL_INTROSPECTION = 'true';
-        overrides.services.mcp_gateway.environment.GRAPHQL_MAX_DEPTH = '10';
-        overrides.services.llama_agent.environment.GRAPHQL_MODE = 'true';
-    }
 
 
 
-    // Microservices-specific configuration
-    if (applicationType === 'microservices') {
-        overrides.services.mcp_gateway.environment.SERVICE_DISCOVERY = 'true';
-        overrides.services.mcp_gateway.environment.CIRCUIT_BREAKER = 'true';
-        overrides.services.llama_agent.environment.MICROSERVICES_MODE = 'true';
-    }
+
+
 
     return overrides;
 }

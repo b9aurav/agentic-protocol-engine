@@ -34,7 +34,7 @@ All scripts support the following options:
 
 - `--skip-cleanup` / `-SkipCleanup`: Skip final cleanup of test artifacts
 - `--skip-docker-cleanup` / `-SkipDockerCleanup`: Skip Docker cleanup at the beginning
-- `--test-project-name NAME` / `-TestProjectName NAME`: Set custom test project name (default: `ape-test-scratch`)
+- `--test-project-name NAME` / `-TestProjectName NAME`: Set custom test project name (default: `ape-load-scratch`)
 - `--help` / `-h`: Show help message
 
 ## What the Tests Do

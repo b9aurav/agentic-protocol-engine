@@ -18,7 +18,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
     const configPath = path.resolve(options.config);
     if (!await fs.pathExists(configPath)) {
       spinner.fail(`Configuration file not found: ${configPath}`);
-      console.log(chalk.yellow('\n💡 Run "npx create-ape-test" to generate configuration files.'));
+      console.log(chalk.yellow('\n💡 Run "npx create-ape-load" to generate configuration files.'));
       process.exit(1);
     }
 
@@ -67,7 +67,7 @@ export async function startCommand(options: StartOptions): Promise<void> {
     const composeValidation = await validateComposeFile(composeFile);
     if (!composeValidation.valid) {
       spinner.fail(`Invalid Docker Compose configuration: ${composeValidation.error}`);
-      console.log(chalk.yellow('\n💡 Run "npx create-ape-test" to regenerate configuration files.'));
+      console.log(chalk.yellow('\n💡 Run "npx create-ape-load" to regenerate configuration files.'));
       process.exit(1);
     }
 
@@ -169,9 +169,9 @@ export async function startCommand(options: StartOptions): Promise<void> {
     console.log(chalk.yellow('  🔍 MCP Gateway: http://localhost:3000'));
     
     console.log(chalk.cyan('\n📋 Management Commands:'));
-    console.log(chalk.cyan('  📋 View logs: ape-test logs'));
-    console.log(chalk.cyan('  📊 Check status: ape-test status'));
-    console.log(chalk.cyan('  ⏹️  Stop test: ape-test stop'));
+    console.log(chalk.cyan('  📋 View logs: ape-load logs'));
+    console.log(chalk.cyan('  📊 Check status: ape-load status'));
+    console.log(chalk.cyan('  ⏹️  Stop test: ape-load stop'));
     
     // Display scaling information if applicable
     if (agentCount !== runningAgents) {

@@ -37,7 +37,7 @@ async function displayStatus(): Promise<void> {
   if (!projectDir) {
     console.log(chalk.yellow('⚠️  No APE project found in current directory or parent directories.'));
     console.log(chalk.yellow('💡 Run this command from within an APE project directory.'));
-    console.log(chalk.yellow('💡 Or run "npx create-ape-test" to create a new project.'));
+    console.log(chalk.yellow('💡 Or run "npx create-ape-load" to create a new project.'));
     return;
   }
 
@@ -99,13 +99,13 @@ async function displayStatus(): Promise<void> {
     console.log(chalk.yellow('  🔍 MCP Gateway: http://localhost:3000'));
     
     console.log(chalk.cyan('\n📋 Management Commands:'));
-    console.log(chalk.cyan('  📋 View logs: ape-test logs'));
-    console.log(chalk.cyan('  📊 Watch status: ape-test status --watch'));
-    console.log(chalk.cyan('  ⏹️  Stop test: ape-test stop'));
+    console.log(chalk.cyan('  📋 View logs: ape-load logs'));
+    console.log(chalk.cyan('  📊 Watch status: ape-load status --watch'));
+    console.log(chalk.cyan('  ⏹️  Stop test: ape-load stop'));
   } else {
     console.log(chalk.yellow('\n💡 Management Commands:'));
-    console.log(chalk.yellow('  🚀 Start test: ape-test start'));
-    console.log(chalk.yellow('  📋 View logs: ape-test logs'));
+    console.log(chalk.yellow('  🚀 Start test: ape-load start'));
+    console.log(chalk.yellow('  📋 View logs: ape-load logs'));
   }
 }
 

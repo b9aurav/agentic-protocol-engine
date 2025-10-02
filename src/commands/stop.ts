@@ -102,8 +102,8 @@ export async function stopCommand(options: StopOptions): Promise<void> {
     // Provide next steps
     console.log(chalk.yellow('\n💡 Next Steps:'));
     console.log(chalk.yellow('  📊 View final metrics: Check Grafana dashboard before it shuts down'));
-    console.log(chalk.yellow('  🔄 Restart test: ape-test start'));
-    console.log(chalk.yellow('  📋 Check status: ape-test status'));
+    console.log(chalk.yellow('  🔄 Restart test: ape-load start'));
+    console.log(chalk.yellow('  📋 Check status: ape-load status'));
     
   } catch (error) {
     spinner.fail(`Failed to stop load test: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -111,7 +111,7 @@ export async function stopCommand(options: StopOptions): Promise<void> {
     // Provide helpful troubleshooting information
     console.log(chalk.red('\n🔧 Troubleshooting:'));
     console.log(chalk.red('  1. Check Docker is running: docker ps'));
-    console.log(chalk.red('  2. Try force stop: ape-test stop --force'));
+    console.log(chalk.red('  2. Try force stop: ape-load stop --force'));
     console.log(chalk.red('  3. Manual cleanup: docker compose -f ape.docker-compose.yml down'));
     
     process.exit(1);

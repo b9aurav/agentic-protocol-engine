@@ -187,7 +187,7 @@ async function executeScaling(config: ScalingConfig, strategy: any, shutdownConf
 
   } catch (error) {
     console.error(chalk.red('\n❌ Scaling operation failed:'), error);
-    console.log(chalk.yellow('💡 You can check the current status with: ape-test status'));
+    console.log(chalk.yellow('💡 You can check the current status with: ape-load status'));
     throw error;
   }
 }
@@ -285,7 +285,7 @@ async function displayPostScalingStatus(targetAgents: number): Promise<void> {
     // Display resource usage
     console.log(chalk.blue('\n💾 Current Resource Usage'));
     console.log(chalk.blue('═'.repeat(50)));
-    console.log(chalk.gray('Use "ape-test status" for detailed resource information'));
+    console.log(chalk.gray('Use "ape-load status" for detailed resource information'));
     
   } catch (error) {
     console.warn(chalk.yellow('Could not retrieve post-scaling status'));

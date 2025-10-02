@@ -233,48 +233,7 @@ export class ConfigValidator {
   }
 
   private validateAuthConfig(config: SetupAnswers): void {
-    if (!config.authType || config.authType === 'none') {
-      this.addSuggestion('authType', 'No authentication configured', undefined,
-        'Consider adding authentication for more realistic load testing');
-      return;
-    }
-
-    switch (config.authType) {
-      case 'bearer':
-        if (!config.authToken) {
-          this.addError('authToken', 'Bearer token is required for bearer authentication', 'REQUIRED_AUTH_FIELD');
-        } else {
-          if (config.authToken.length < 10) {
-            this.addWarning('authToken', 'Bearer token seems too short', 'TOKEN_LENGTH_WARNING',
-              'Ensure the token is valid and complete');
-          }
-          if (config.authToken.includes(' ')) {
-            this.addWarning('authToken', 'Bearer token contains spaces', 'TOKEN_FORMAT_WARNING',
-              'Tokens typically should not contain spaces');
-          }
-        }
-        break;
-
-      case 'basic':
-        if (!config.authUsername) {
-          this.addError('authUsername', 'Username is required for basic authentication', 'REQUIRED_AUTH_FIELD');
-        }
-        if (!config.authPassword) {
-          this.addError('authPassword', 'Password is required for basic authentication', 'REQUIRED_AUTH_FIELD');
-        } else if (config.authPassword.length < 6) {
-          this.addWarning('authPassword', 'Password is very short', 'PASSWORD_LENGTH_WARNING',
-            'Consider using a stronger password');
-        }
-        break;
-
-      case 'session':
-        this.addSuggestion('authType', 'Session authentication requires login flow', undefined,
-          'Ensure your test goal includes login/logout steps for proper session management');
-        break;
-
-      default:
-        this.addError('authType', `Unknown authentication type: ${config.authType}`, 'INVALID_AUTH_TYPE');
-    }
+    // No authentication validation needed for public APIs
   }
 
   private validatePerformanceConfig(config: SetupAnswers): void {
@@ -346,23 +305,11 @@ export class ConfigValidator {
           'These endpoints are commonly used in this application type');
       }
 
-      // Suggest appropriate authentication
-      if (config.authType === 'none' && template.authTypes.length > 1) {
-        this.addSuggestion('authType',
-          `${template.name} typically uses authentication`,
-          template.authTypes.filter(auth => auth !== 'none')[0],
-          'Authentication provides more realistic load testing scenarios');
-      }
+
     }
   }
 
   private validateSecurityConfig(config: SetupAnswers): void {
-    // Check for potential security issues
-    if (config.authType === 'basic' && config.targetUrl.startsWith('http:')) {
-      this.addWarning('security', 'Basic authentication over HTTP is insecure', 'SECURITY_WARNING',
-        'Credentials will be transmitted in plain text');
-    }
-
     // Check for hardcoded credentials in project name or goal
     const sensitivePatterns = [
       /password/i, /secret/i, /key/i, /token/i, /credential/i
@@ -378,16 +325,6 @@ export class ConfigValidator {
           'Avoid including credentials or sensitive data in descriptions');
       }
     });
-
-    // Custom headers security check
-    if (config.customHeaders) {
-      Object.keys(config.customHeaders).forEach(header => {
-        if (header.toLowerCase().includes('authorization') || header.toLowerCase().includes('token')) {
-          this.addWarning('customHeaders', `Custom header '${header}' may contain sensitive data`, 'SECURITY_WARNING',
-            'Ensure sensitive headers are properly secured');
-        }
-      });
-    }
   }
 
   private validateGatewaySection(gateway: any): void {

@@ -92,17 +92,12 @@ async function validateConfigFile(configPath: string): Promise<ConfigValidationR
       projectName: configContent.project?.name || 'unknown',
       targetUrl: configContent.target?.url || '',
       targetPort: configContent.target?.port || 80,
-      authType: configContent.target?.auth?.type || 'none',
-      authToken: configContent.target?.auth?.token,
-      authUsername: configContent.target?.auth?.username,
-      authPassword: configContent.target?.auth?.password,
       cerebrasApiKey: 'configured', // Placeholder for validation
       agentCount: configContent.agents?.count || 1,
       testDuration: configContent.test?.duration || 5,
       testGoal: configContent.agents?.goal || '',
       endpoints: configContent.target?.endpoints || [],
-      customHeaders: configContent.target?.headers || {},
-      applicationType: configContent.applicationType as ApplicationType
+      applicationType: 'rest-api'
     };
 
     return validateConfiguration(setupAnswers, setupAnswers.applicationType);
@@ -192,7 +187,7 @@ async function autoValidateCurrentDirectory(_options: ValidateOptions): Promise<
 
   if (!foundFiles) {
     console.log(chalk.yellow('⚠️  No APE configuration files found in current directory'));
-    console.log(chalk.gray('Run "ape-test setup" to create a new configuration'));
+    console.log(chalk.gray('Run "ape-load setup" to create a new configuration'));
   }
 }
 

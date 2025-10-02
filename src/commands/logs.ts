@@ -39,7 +39,7 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
     const status = await dockerManager.getStatus();
     if (!status.isRunning) {
       console.log(chalk.yellow('⚠️  No APE services are currently running.'));
-      console.log(chalk.yellow('💡 Start the test with: ape-test start'));
+      console.log(chalk.yellow('💡 Start the test with: ape-load start'));
       process.exit(0);
     }
 
@@ -146,7 +146,7 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
     
     // Provide helpful troubleshooting information
     console.log(chalk.red('\n🔧 Troubleshooting:'));
-    console.log(chalk.red('  1. Ensure APE services are running: ape-test status'));
+    console.log(chalk.red('  1. Ensure APE services are running: ape-load status'));
     console.log(chalk.red('  2. Check Docker is running: docker ps'));
     console.log(chalk.red('  3. Verify project directory contains ape.docker-compose.yml'));
     

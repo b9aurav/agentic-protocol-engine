@@ -15,7 +15,7 @@ program
 // Main setup command - Requirements 5.1, 5.2
 program
   .argument('[project-name]', 'Name of the test project directory')
-  .option('-t, --template <type>', 'Template type (rest-api, graphql, web-app)', 'rest-api')
+  .option('-t, --template <type>', 'Template type (rest-api)', 'rest-api')
   .option('-y, --yes', 'Skip interactive prompts and use defaults')
   .option('-o, --output <path>', 'Output directory for generated files', '.')
   .description('Interactive setup wizard for APE load test configuration')

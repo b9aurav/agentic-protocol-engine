@@ -207,17 +207,7 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           HTTP_POOL_CONNECTIONS: '10',
           HTTP_POOL_MAXSIZE: '20',
           HTTP_RETRIES: '3',
-          // Dynamic authentication configuration
-          ...(config.authType !== 'none' && {
-            AUTH_TYPE: config.authType,
-            ...(config.authType === 'bearer' && config.authToken && {
-              AUTH_TOKEN: config.authToken
-            }),
-            ...(config.authType === 'basic' && config.authUsername && config.authPassword && {
-              AUTH_USERNAME: config.authUsername,
-              AUTH_PASSWORD: config.authPassword
-            })
-          })
+
         },
         networks: [networkName],
         restart: 'unless-stopped',

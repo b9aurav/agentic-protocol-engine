@@ -95,38 +95,7 @@ export function generateMCPGatewayConfig(config: SetupAnswers): MCPGatewayConfig
     }
   }
 
-  // Configure authentication based on setup answers
-  let authConfig: RouteConfig['auth'] | undefined;
-  if (config.authType === 'bearer' && config.authToken) {
-    authConfig = {
-      type: 'bearer',
-      headers: {
-        'Authorization': `Bearer ${config.authToken}`
-      },
-      credentials: {
-        token: config.authToken
-      }
-    };
-  } else if (config.authType === 'basic' && config.authUsername && config.authPassword) {
-    const basicAuth = Buffer.from(`${config.authUsername}:${config.authPassword}`).toString('base64');
-    authConfig = {
-      type: 'basic',
-      headers: {
-        'Authorization': `Basic ${basicAuth}`
-      },
-      credentials: {
-        username: config.authUsername,
-        password: config.authPassword
-      }
-    };
-  } else if (config.authType === 'session') {
-    authConfig = {
-      type: 'session',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    };
-  }
+
 
   // Build the complete MCP Gateway configuration
   const mcpConfig: MCPGatewayConfig = {
@@ -156,7 +125,7 @@ export function generateMCPGatewayConfig(config: SetupAnswers): MCPGatewayConfig
           backoff_factor: 1.5,
           retry_on: [502, 503, 504, 408, 429] // Retry on server errors and timeouts
         },
-        auth: authConfig,
+
         endpoints: endpoints,
         health_check: {
           enabled: true,
@@ -217,16 +186,7 @@ export function generateMCPGatewayConfig(config: SetupAnswers): MCPGatewayConfig
     }
   };
 
-  // Add custom headers to SUT route if specified
-  if (Object.keys(config.customHeaders).length > 0) {
-    if (!mcpConfig.routes.sut_api.auth) {
-      mcpConfig.routes.sut_api.auth = { type: 'none' };
-    }
-    if (!mcpConfig.routes.sut_api.auth.headers) {
-      mcpConfig.routes.sut_api.auth.headers = {};
-    }
-    Object.assign(mcpConfig.routes.sut_api.auth.headers, config.customHeaders);
-  }
+
 
   return mcpConfig;
 }

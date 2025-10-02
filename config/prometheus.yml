@@ -52,7 +52,7 @@ scrape_configs:
         labels:
           agent_id: 'agent-1'
           service_name: 'llama-agent'
-          environment: 'ape-test'
+          environment: 'ape-load'
     scrape_interval: 15s
     metrics_path: /metrics
     scrape_timeout: 10s
@@ -63,7 +63,7 @@ scrape_configs:
       - targets: ['test-final-fix-mcp_gateway-1:8001']
         labels:
           service_name: 'mcp-gateway'
-          environment: 'ape-test'
+          environment: 'ape-load'
     scrape_interval: 15s
     metrics_path: /metrics
     scrape_timeout: 10s
@@ -74,7 +74,7 @@ scrape_configs:
       - targets: ['test-final-fix-cerebras_proxy-1:8002']
         labels:
           service_name: 'cerebras-proxy'
-          environment: 'ape-test'
+          environment: 'ape-load'
     scrape_interval: 15s
     metrics_path: /metrics
     scrape_timeout: 10s
@@ -86,6 +86,6 @@ scrape_configs:
           - 'mcp-gateway:8001'
           - 'cerebras-proxy:8002'
         labels:
-          environment: 'ape-test'
+          environment: 'ape-load'
     scrape_interval: 15s
     metrics_path: /metrics

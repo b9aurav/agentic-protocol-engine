@@ -36,8 +36,8 @@ These metrics validate the performance of the Llama Agents and the efficiency of
 | :---- | :---- | :---- |
 | **End-to-End Latency** (p50 / p95) | MCP/SUT Logs | Measures total time for a tool call (API request \+ LLM reasoning \+ execution). |
 | **Time-to-First-Token (TTFT)** | Cerebras Proxy Logs | Measures the latency of the Cerebras inference endpoint, directly validating the **low cognitive latency** claim. |
-| **Token Usage & Cost** | Cerebras Proxy Logs | Tracks input/output tokens to calculate operational costs and prove token efficiency (e.g., benefits of GraphQL over REST). |
-| **Tool Calls and Duration** | MCP Gateway/Loki | Tracks how often agents use specific tools (e.g., Tool\_HTTP\_POST, execute\_graphql\_query) and how long they take. |
+| **Token Usage & Cost** | Cerebras Proxy Logs | Tracks input/output tokens to calculate operational costs and prove token efficiency. |
+| **Tool Calls and Duration** | MCP Gateway/Loki | Tracks how often agents use specific tools (e.g., Tool\_HTTP\_POST, execute\_api\_request) and how long they take. |
 
 ### **B. Functional and Error Metrics (Realism)**
 
@@ -80,10 +80,10 @@ The command line is the primary control surface for the user. It abstracts the u
 
 | CLI Action | Command | Purpose |
 | :---- | :---- | :---- |
-| **Setup** | `npx create-ape-test` | Initiates an interactive wizard to generate all necessary configuration files. |
-| **Load Scaling** | `ape-test start --agents N` | Starts the test environment and dynamically scales the load to N concurrent agents. |
-| **Live Tracing** | `ape-test logs -f mcp_gateway --grep <TRACE_ID>` | Provides a simple way to trace a specific session through the MCP Gateway. |
-| **Agent Output** | `ape-test logs -f <AGENT_ID>` | Streams a specific agent's internal reasoning and tool call JSON for low-level debugging. |
-| **Stop Test** | `ape-test stop` | Shuts down the entire test environment and observability stack. |
+| **Setup** | `npx create-ape-load` | Initiates an interactive wizard to generate all necessary configuration files. |
+| **Load Scaling** | `ape-load start --agents N` | Starts the test environment and dynamically scales the load to N concurrent agents. |
+| **Live Tracing** | `ape-load logs -f mcp_gateway --grep <TRACE_ID>` | Provides a simple way to trace a specific session through the MCP Gateway. |
+| **Agent Output** | `ape-load logs -f <AGENT_ID>` | Streams a specific agent's internal reasoning and tool call JSON for low-level debugging. |
+| **Stop Test** | `ape-load stop` | Shuts down the entire test environment and observability stack. |
 
 This consolidated architecture ensures the user can easily generate, observe, and validate the complexity and scale of the AI-driven traffic.
