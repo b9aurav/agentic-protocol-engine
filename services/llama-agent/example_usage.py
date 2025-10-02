@@ -17,8 +17,8 @@ async def example_user_journey():
     # Initialize agent configuration
     config = AgentConfig(
         agent_id="example-agent-001",
-        mcp_gateway_url="http://mcp-gateway:8080",
-        cerebras_proxy_url="http://cerebras-proxy:8000"
+        mcp_gateway_url="http://mcp_gateway:3000",
+        cerebras_proxy_url="http://cerebras_proxy:8000"
     )
     
     # Create agent instance

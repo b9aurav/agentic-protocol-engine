@@ -183,10 +183,13 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
         expose: ['8000'], // Expose metrics port for Prometheus scraping (internal only)
         environment: {
           MCP_GATEWAY_URL: 'http://mcp_gateway:3000',
+          CEREBRAS_PROXY_URL: 'http://cerebras_proxy:8000',
           AGENT_GOAL: config.testGoal,
           TARGET_API_NAME: 'sut_api',
           LOG_LEVEL: 'info',
-          SESSION_TIMEOUT: '300',
+          SESSION_TIMEOUT_MINUTES: '30',
+          MAX_RETRIES: '3',
+          INFERENCE_TIMEOUT: '10.0',
           AGENT_ID: '${HOSTNAME}', // Dynamic agent identification
           TEST_DURATION: `${config.testDuration}`,
           TARGET_ENDPOINTS: config.endpoints.join(','),

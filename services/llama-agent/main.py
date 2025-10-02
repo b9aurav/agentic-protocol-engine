@@ -64,8 +64,8 @@ class AgentService:
         """Load configuration from environment variables."""
         return AgentConfig(
             agent_id=os.getenv("AGENT_ID", f"agent-{os.getpid()}"),
-            mcp_gateway_url=os.getenv("MCP_GATEWAY_URL", "http://mcp-gateway:8080"),
-            cerebras_proxy_url=os.getenv("CEREBRAS_PROXY_URL", "http://cerebras-proxy:8000"),
+            mcp_gateway_url=os.getenv("MCP_GATEWAY_URL", "http://mcp_gateway:3000"),
+            cerebras_proxy_url=os.getenv("CEREBRAS_PROXY_URL", "http://cerebras_proxy:8000"),
             session_timeout_minutes=int(os.getenv("SESSION_TIMEOUT_MINUTES", "30")),
             max_retries=int(os.getenv("MAX_RETRIES", "3")),
             inference_timeout=float(os.getenv("INFERENCE_TIMEOUT", "10.0")),

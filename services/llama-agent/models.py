@@ -79,8 +79,8 @@ class AgentSessionContext(BaseModel):
 class AgentConfig(BaseModel):
     """Configuration for the Llama Agent."""
     agent_id: str
-    mcp_gateway_url: str = "http://mcp-gateway:8080"
-    cerebras_proxy_url: str = "http://cerebras-proxy:8000"
+    mcp_gateway_url: str = "http://mcp_gateway:3000"
+    cerebras_proxy_url: str = "http://cerebras_proxy:8000"
     session_timeout_minutes: int = 30
     max_retries: int = 3
     inference_timeout: float = 10.0

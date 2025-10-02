@@ -147,7 +147,7 @@ class StatefulAgentWorker(CustomSimpleAgentWorker):
         """Remove expired sessions to prevent memory leaks."""
         expired_sessions = []
         for session_id, context in self.sessions.items():
-            if context.is_expired(self._agent_config.session_timeout_minutes):
+            if context.is_expired(self.__dict__['_agent_config'].session_timeout_minutes):
                 expired_sessions.append(session_id)
         
         for session_id in expired_sessions:
@@ -168,7 +168,7 @@ class StatefulAgentWorker(CustomSimpleAgentWorker):
         Overrides the base implementation to add session context management and error categorization.
         """
         # Get session_id from stored context in agent worker
-        session_id = getattr(self, '_current_session_id', None)
+        session_id = self.__dict__.get('_current_session_id', None)
         session_context = None
         
         if session_id:

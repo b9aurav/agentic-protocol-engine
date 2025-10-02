@@ -8,8 +8,8 @@ import structlog
 import asyncio
 
 from llama_index.core.agent import AgentRunner
-from llama_index.llms.openai import OpenAI
 from llama_index.core.tools import BaseTool
+from cerebras.cloud.sdk import Cerebras
 
 from agent_worker import StatefulAgentWorker
 from models import AgentConfig, AgentSessionContext
@@ -38,35 +38,32 @@ class LlamaAgent:
         # Initialize metrics collector with enhanced session tracking
         self.metrics_collector = initialize_metrics(config.agent_id)
         
-        # Initialize LLM with Cerebras Proxy endpoint
-        # Disable LlamaIndex model validation to allow custom models
-        import llama_index.llms.openai.base
-        original_validate = getattr(llama_index.llms.openai.base, '_validate_model', None)
-        if original_validate:
-            llama_index.llms.openai.base._validate_model = lambda x: True
-        
-        self.llm = OpenAI(
-            api_base=f"{config.cerebras_proxy_url}/v1",
-            api_key=os.getenv("CEREBRAS_API_KEY", "dummy-key"),
-            model="llama3.1-8b",  # Use the actual Llama model name
-            timeout=config.inference_timeout
-        )
+        self.model_name = "llama3.1-8b"
         
         # Initialize MCP tools
         self.tools = self._initialize_tools()
         
-        # Initialize agent worker
+        # Create Cerebras LLM wrapper for proper LlamaIndex integration
+        from cerebras_llm import CerebrasLLM
+        cerebras_llm = CerebrasLLM(
+            api_key=os.getenv("CEREBRAS_API_KEY", "dummy-key"),
+            base_url=config.cerebras_proxy_url,
+            model_name=self.model_name,
+            max_tokens=1000,
+            temperature=0.7
+        )
+        
+        # Initialize agent worker with Cerebras LLM
         self.agent_worker = StatefulAgentWorker(
             tools=self.tools,
-            llm=self.llm,
+            llm=cerebras_llm,
             config=config,
             verbose=True
         )
         
-        # Initialize agent runner
-        self.agent_runner = AgentRunner(self.agent_worker)
-        
         self.logger.info("Llama Agent initialized successfully")
+    
+
     
     def _initialize_tools(self) -> list[BaseTool]:
         """Initialize MCP tools for HTTP operations and state management."""
@@ -227,10 +224,8 @@ class LlamaAgent:
                 else:
                     execution_prompt = initial_prompt
                 
-                # Create a task and store session context in agent worker
-                task = self.agent_runner.create_task(execution_prompt)
                 # Store current session ID in agent worker for access during execution
-                self.agent_worker._current_session_id = session_id
+                self.agent_worker.__dict__['_current_session_id'] = session_id
                 
                 self.logger.info(
                     "Executing agent task",
@@ -239,10 +234,19 @@ class LlamaAgent:
                     max_attempts=max_execution_attempts
                 )
                 
-                # Execute the task with timeout and error handling
+                # Store session_id in agent worker for access during execution
+                self.agent_worker.__dict__['_current_session_id'] = session_id
+                
+                # Use the LLM directly to get a response and then process it
+                from llama_index.core.base.llms.types import ChatMessage, MessageRole
+                
+                # Create chat message
+                messages = [ChatMessage(role=MessageRole.USER, content=execution_prompt)]
+                
+                # Get response from LLM
                 response = await asyncio.wait_for(
-                    self.agent_runner.arun_task(task),
-                    timeout=self.config.inference_timeout * 3  # Allow more time for full execution
+                    self.agent_worker.llm.achat(messages),
+                    timeout=self.config.inference_timeout * 3
                 )
                 
                 # Process response and extract session state
@@ -669,19 +673,16 @@ class LlamaAgent:
     
     async def health_check(self) -> Dict[str, Any]:
         """Perform a health check of the agent with session metrics."""
-        # Skip LlamaIndex validation and use direct Cerebras proxy health check
+        # Test LLM connectivity with a simple completion
         try:
-            import httpx
-            health_url = f"{self.config.cerebras_proxy_url}/health"
-            async with httpx.AsyncClient() as client:
-                response = await client.get(health_url, timeout=5.0)
-                llm_healthy = response.status_code == 200
-                if llm_healthy:
-                    self.logger.info("Cerebras proxy health check succeeded")
-                else:
-                    self.logger.error(f"Cerebras proxy health check failed with status {response.status_code}")
+            test_response = await self.agent_worker.llm.acomplete("Hello")
+            llm_healthy = bool(test_response and test_response.text)
+            if llm_healthy:
+                self.logger.info("LLM health check succeeded")
+            else:
+                self.logger.error("LLM health check failed - no response")
         except Exception as e:
-            self.logger.error("Cerebras proxy health check failed", error=str(e))
+            self.logger.error("LLM health check failed", error=str(e))
             llm_healthy = False
         
         active_sessions = len(self.agent_worker.sessions)

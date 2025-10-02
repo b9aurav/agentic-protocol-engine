@@ -7,15 +7,15 @@ import * as yaml from 'yaml';
 import { generateDockerCompose, generatePrometheusConfig, generatePromtailConfig } from '../templates/docker-compose';
 import { generateProductionOverride, generateProductionEnv } from '../templates/docker-compose.production';
 import { generateMCPGatewayConfig } from '../templates/mcp-gateway';
-import { 
-  ApplicationType, 
-  APPLICATION_TEMPLATES, 
+import {
+  ApplicationType,
+  APPLICATION_TEMPLATES,
   generateApplicationSpecificConfig,
   generateApplicationDockerOverride
 } from '../templates/application-types';
-import { 
-  validateConfiguration, 
-  formatValidationResults 
+import {
+  validateConfiguration,
+  formatValidationResults
 } from '../utils/config-validator';
 
 interface SetupOptions {
@@ -74,7 +74,7 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
       };
     } else {
       // Interactive prompts - Requirements 5.1, 5.2
-      
+
       // First, ask for application type to customize subsequent prompts
       const appTypeAnswer = await inquirer.prompt([
         {
@@ -90,7 +90,7 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
       ]);
 
       const selectedTemplate = APPLICATION_TEMPLATES[appTypeAnswer.applicationType as ApplicationType];
-      
+
       console.log(chalk.green(`\n✨ Selected: ${selectedTemplate.name}`));
       console.log(chalk.gray(`Default endpoints: ${selectedTemplate.defaultEndpoints.join(', ')}`));
       console.log(chalk.gray(`Supported auth types: ${selectedTemplate.authTypes.join(', ')}\n`));
@@ -330,11 +330,11 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
     if (options?.validate !== false) {
       console.log(chalk.blue('\n🔍 Validating configuration...'));
       const validationResult = validateConfiguration(answers, answers.applicationType);
-      
+
       if (!validationResult.valid) {
         console.log(chalk.red('\n❌ Configuration validation failed:'));
         console.log(formatValidationResults(validationResult));
-        
+
         const continueAnswer = await inquirer.prompt([
           {
             type: 'confirm',
@@ -343,7 +343,7 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
             default: false
           }
         ]);
-        
+
         if (!continueAnswer.continue) {
           console.log(chalk.yellow('Setup cancelled. Please fix the configuration issues and try again.'));
           return;
@@ -351,7 +351,7 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
       } else if (validationResult.warnings.length > 0 || validationResult.suggestions.length > 0) {
         console.log(chalk.yellow('\n⚠️  Configuration has warnings or suggestions:'));
         console.log(formatValidationResults(validationResult));
-        
+
         const continueAnswer = await inquirer.prompt([
           {
             type: 'confirm',
@@ -360,7 +360,7 @@ export async function setupWizard(projectName?: string, options?: SetupOptions):
             default: true
           }
         ]);
-        
+
         if (!continueAnswer.continue) {
           console.log(chalk.yellow('Setup cancelled.'));
           return;
@@ -448,16 +448,38 @@ async function generateConfigFiles(projectPath: string, config: SetupAnswers): P
 
   // Generate Docker Compose configuration - Requirements 5.4, 6.2, 6.3
   const dockerComposeConfig = generateDockerCompose(config);
+
+  // Fix environment variable syntax in YAML output - restore ${} format
+  let dockerComposeYaml = yaml.stringify(dockerComposeConfig);
+
+  // Fix environment variables (uppercase names with optional default values)
+  dockerComposeYaml = dockerComposeYaml.replace(/\{([A-Z_][A-Z0-9_]*(?::-[^}]*)?)\}/g, '${$1}');
+
+  // Fix Docker template variables that may have been corrupted
+  dockerComposeYaml = dockerComposeYaml.replace(/\$?\{\{\.([^}]+)\}\}/g, '{{.$1}}');
+  dockerComposeYaml = dockerComposeYaml.replace(/\$\{\.([^}]+)\}/g, '{{.$1}}');
+
   await fs.writeFile(
     path.join(projectPath, 'ape.docker-compose.yml'),
-    yaml.stringify(dockerComposeConfig)
+    dockerComposeYaml
   );
 
   // Generate production-optimized Docker Compose override - Requirements 6.1, 6.4
   const productionOverride = generateProductionOverride(config);
+
+  // Fix environment variable syntax in production YAML output - restore ${} format
+  let productionOverrideYaml = yaml.stringify(productionOverride);
+
+  // Fix environment variables (uppercase names with optional default values)
+  productionOverrideYaml = productionOverrideYaml.replace(/\{([A-Z_][A-Z0-9_]*(?::-[^}]*)?)\}/g, '${$1}');
+
+  // Fix Docker template variables that may have been corrupted
+  productionOverrideYaml = productionOverrideYaml.replace(/\$?\{\{\.([^}]+)\}\}/g, '{{.$1}}');
+  productionOverrideYaml = productionOverrideYaml.replace(/\$\{\.([^}]+)\}/g, '{{.$1}}');
+
   await fs.writeFile(
     path.join(projectPath, 'ape.docker-compose.production.yml'),
-    yaml.stringify(productionOverride)
+    productionOverrideYaml
   );
 
   // Generate production environment file - Requirements 6.1, 6.4
@@ -553,7 +575,7 @@ CEREBRAS_API_KEY=your_cerebras_api_key_here
   await fs.writeFile(path.join(projectPath, '.env.template'), envTemplate);
 
   // Generate MCP Gateway routing configuration - Requirements 3.3, 3.4, 5.4
-  const mcpGatewayConfig = config.applicationType 
+  const mcpGatewayConfig = config.applicationType
     ? generateApplicationSpecificConfig(config, config.applicationType)
     : generateMCPGatewayConfig(config);
   await fs.writeJSON(path.join(projectPath, 'ape.mcp-gateway.json'), mcpGatewayConfig, { spaces: 2 });
@@ -652,17 +674,17 @@ For more information, visit: https://github.com/b9aurav/agentic-protocol-engine
   // Copy services directory to project - Required for Docker builds
   const servicesSourcePath = path.join(__dirname, '..', '..', 'services');
   const servicesDestPath = path.join(projectPath, 'services');
-  
+
   try {
     await fs.copy(servicesSourcePath, servicesDestPath, {
       overwrite: true,
       filter: (src) => {
         // Exclude Python cache files and other build artifacts
         const relativePath = path.relative(servicesSourcePath, src);
-        return !relativePath.includes('__pycache__') && 
-               !relativePath.includes('.pyc') && 
-               !relativePath.includes('.pytest_cache') &&
-               !relativePath.endsWith('.log');
+        return !relativePath.includes('__pycache__') &&
+          !relativePath.includes('.pyc') &&
+          !relativePath.includes('.pytest_cache') &&
+          !relativePath.endsWith('.log');
       }
     });
   } catch (error) {
