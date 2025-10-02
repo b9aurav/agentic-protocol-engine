@@ -14,7 +14,26 @@ export async function startCommand(options: StartOptions): Promise<void> {
   const spinner = ora('Starting APE load test...').start();
   
   try {
-    const agentCount = parseInt(options.agents, 10);
+    // Check if configuration file exists first to read agent count
+    const configPath = path.resolve(options.config);
+    if (!await fs.pathExists(configPath)) {
+      spinner.fail(`Configuration file not found: ${configPath}`);
+      console.log(chalk.yellow('\n💡 Run "npx create-ape-test" to generate configuration files.'));
+      process.exit(1);
+    }
+
+    // Read configuration to get default agent count if not specified via CLI
+    let agentCount: number;
+    if (options.agents === '10') { // Default value from CLI, check config file
+      try {
+        const config = await fs.readJson(configPath);
+        agentCount = config.agents?.count || parseInt(options.agents, 10);
+      } catch (error) {
+        agentCount = parseInt(options.agents, 10);
+      }
+    } else {
+      agentCount = parseInt(options.agents, 10);
+    }
     
     if (isNaN(agentCount) || agentCount <= 0) {
       spinner.fail('Invalid agent count. Must be a positive number.');
@@ -40,14 +59,6 @@ export async function startCommand(options: StartOptions): Promise<void> {
     }
 
     spinner.text = 'Validating configuration...';
-    
-    // Check if configuration file exists
-    const configPath = path.resolve(options.config);
-    if (!await fs.pathExists(configPath)) {
-      spinner.fail(`Configuration file not found: ${configPath}`);
-      console.log(chalk.yellow('\n💡 Run "npx create-ape-test" to generate configuration files.'));
-      process.exit(1);
-    }
 
     // Validate Docker Compose file exists
     const projectDir = path.dirname(configPath);
@@ -78,8 +89,32 @@ export async function startCommand(options: StartOptions): Promise<void> {
       spinner.text = `Scaling to ${agentCount} agents...`;
       await dockerManager.scale('llama_agent', agentCount);
     } else {
-      // Start all services with agent scaling - Requirements 5.3, 6.1, 6.4
-      spinner.text = 'Starting observability stack...';
+      // Start observability stack first if it exists - Requirements 5.3, 6.1, 6.4
+      const observabilityCompose = path.join(projectDir, 'config', 'observability.docker-compose.yml');
+      if (await fs.pathExists(observabilityCompose)) {
+        spinner.text = 'Starting observability stack...';
+        
+        const observabilityManager = new DockerComposeManager(
+          path.join(projectDir, 'config'),
+          'observability.docker-compose.yml',
+          `${path.basename(projectDir)}-observability`
+        );
+        
+        try {
+          await observabilityManager.start({
+            projectName: `${path.basename(projectDir)}-observability`,
+            detach: true
+          });
+          
+          // Wait a moment for observability services to start
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        } catch (error) {
+          spinner.warn('Observability stack failed to start, continuing with core services...');
+        }
+      }
+      
+      // Start core APE services with agent scaling
+      spinner.text = `Starting APE services with ${agentCount} agents...`;
       
       await dockerManager.start({
         projectName: path.basename(projectDir),
@@ -145,14 +180,36 @@ export async function startCommand(options: StartOptions): Promise<void> {
     }
     
   } catch (error) {
-    spinner.fail(`Failed to start load test: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    spinner.fail(`Failed to start load test: ${errorMessage}`);
     
-    // Provide helpful troubleshooting information
+    // Provide specific troubleshooting based on error type
     console.log(chalk.red('\n🔧 Troubleshooting:'));
-    console.log(chalk.red('  1. Ensure Docker is running: docker --version'));
-    console.log(chalk.red('  2. Check Docker Compose: docker compose version'));
-    console.log(chalk.red('  3. Verify configuration: ape-test status'));
-    console.log(chalk.red('  4. Check logs: ape-test logs'));
+    
+    if (errorMessage.includes('port') || errorMessage.includes('bind')) {
+      console.log(chalk.red('  🔌 Port Conflict Detected:'));
+      console.log(chalk.red('    - Another service may be using the same port'));
+      console.log(chalk.red('    - Check running containers: docker ps'));
+      console.log(chalk.red('    - Stop conflicting services or change ports in config'));
+    } else if (errorMessage.includes('network') || errorMessage.includes('subnet')) {
+      console.log(chalk.red('  🌐 Network Issue Detected:'));
+      console.log(chalk.red('    - Clean up unused networks: docker network prune -f'));
+      console.log(chalk.red('    - Check network conflicts: docker network ls'));
+    } else if (errorMessage.includes('pull') || errorMessage.includes('image')) {
+      console.log(chalk.red('  📦 Docker Image Issue:'));
+      console.log(chalk.red('    - Images may not be available publicly yet'));
+      console.log(chalk.red('    - This is expected for development versions'));
+    } else if (errorMessage.includes('unhealthy') || errorMessage.includes('health')) {
+      console.log(chalk.red('  🏥 Service Health Issue:'));
+      console.log(chalk.red('    - Check service logs: docker logs <container_name>'));
+      console.log(chalk.red('    - Services may need more time to start'));
+    }
+    
+    console.log(chalk.red('\n  📋 General Steps:'));
+    console.log(chalk.red('    1. Ensure Docker is running: docker --version'));
+    console.log(chalk.red('    2. Check Docker Compose: docker compose version'));
+    console.log(chalk.red('    3. Verify configuration: ape-load validate'));
+    console.log(chalk.red('    4. Check logs: ape-load logs'));
     
     process.exit(1);
   }

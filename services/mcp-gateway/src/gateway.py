@@ -121,11 +121,11 @@ async def add_trace_id_middleware(request: Request, call_next):
     logger.info(
         f"Incoming request: {request.method} {request.url.path}",
         extra={
-            "trace_id": trace_id,
-            "method": request.method,
-            "path": request.url.path,
+            "request_trace_id": trace_id,
+            "http_method": request.method,
+            "request_path": request.url.path,
             "query_params": str(request.query_params) if request.query_params else None,
-            "client_ip": request.client.host if request.client else None,
+            "remote_addr": request.client.host if request.client else None,
             "user_agent": request.headers.get("User-Agent"),
             "request_headers": dict(request.headers),
             "request_body": request_body,
@@ -147,13 +147,13 @@ async def add_trace_id_middleware(request: Request, call_next):
     logger.info(
         f"Response sent: {request.method} {request.url.path}",
         extra={
-            "trace_id": trace_id,
-            "method": request.method,
-            "path": request.url.path,
-            "status_code": response.status_code,
-            "execution_time": execution_time,
+            "request_trace_id": trace_id,
+            "http_method": request.method,
+            "request_path": request.url.path,
+            "response_status": response.status_code,
+            "response_time": execution_time,
             "response_headers": dict(response.headers),
-            "client_ip": request.client.host if request.client else None,
+            "remote_addr": request.client.host if request.client else None,
             "event_type": "request_complete"
         }
     )
@@ -192,6 +192,28 @@ async def handle_mcp_request(request: MCPRequest) -> MCPResponse:
 async def health_check():
     """
     Health check endpoint.
+    Returns the health status of the gateway itself (not dependent routes).
+    """
+    if not router:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "reason": "Gateway not initialized"}
+        )
+    
+    # Simple health check - just verify gateway is running
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "healthy",
+            "gateway": "running",
+            "timestamp": time.time()
+        }
+    )
+
+@app.get("/health/detailed")
+async def detailed_health_check():
+    """
+    Detailed health check endpoint that includes route health.
     Returns the health status of the gateway and its routes.
     """
     if not router:
@@ -273,7 +295,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     trace_id = getattr(request.state, 'trace_id', str(uuid.uuid4()))
     
     logger = logging.getLogger(__name__)
-    logger.error(f"Unhandled exception: {str(exc)}", extra={"trace_id": trace_id})
+    logger.error(f"Unhandled exception: {str(exc)}", extra={"request_trace_id": trace_id})
     
     return JSONResponse(
         status_code=500,

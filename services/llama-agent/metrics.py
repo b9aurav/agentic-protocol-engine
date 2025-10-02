@@ -6,7 +6,7 @@ Enhanced with comprehensive session success tracking (Requirements 4.6, 7.5, 8.3
 
 import time
 from contextlib import contextmanager
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from threading import Lock
 
 from prometheus_client import Counter, Histogram, Gauge, Info, generate_latest, CONTENT_TYPE_LATEST

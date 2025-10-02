@@ -13,7 +13,7 @@ from llama_index.core.tools import BaseTool
 
 from agent_worker import StatefulAgentWorker
 from models import AgentConfig, AgentSessionContext
-from tools_enhanced import HTTPGetTool, HTTPPostTool, HTTPPutTool, HTTPDeleteTool, StateUpdateTool
+from tools import HTTPGetTool, HTTPPostTool, HTTPPutTool, HTTPDeleteTool, StateUpdateTool
 from metrics import initialize_metrics, get_metrics_collector
 
 
@@ -28,16 +28,27 @@ class LlamaAgent:
     
     def __init__(self, config: AgentConfig):
         self.config = config
-        self.logger = logger.bind(agent_id=config.agent_id)
+        # Ensure logger is properly initialized
+        if logger is None:
+            import structlog
+            self.logger = structlog.get_logger(__name__).bind(agent_id=config.agent_id)
+        else:
+            self.logger = logger.bind(agent_id=config.agent_id)
         
         # Initialize metrics collector with enhanced session tracking
         self.metrics_collector = initialize_metrics(config.agent_id)
         
         # Initialize LLM with Cerebras Proxy endpoint
+        # Disable LlamaIndex model validation to allow custom models
+        import llama_index.llms.openai.base
+        original_validate = getattr(llama_index.llms.openai.base, '_validate_model', None)
+        if original_validate:
+            llama_index.llms.openai.base._validate_model = lambda x: True
+        
         self.llm = OpenAI(
             api_base=f"{config.cerebras_proxy_url}/v1",
             api_key=os.getenv("CEREBRAS_API_KEY", "dummy-key"),
-            model="llama-3.1-8b",
+            model="llama3.1-8b",  # Use the actual Llama model name
             timeout=config.inference_timeout
         )
         
@@ -102,6 +113,16 @@ class LlamaAgent:
         session_id = self.agent_worker.create_session(goal, session_id)
         session_context = self.agent_worker.get_session(session_id)
         
+        # Debug: Verify session was created
+        print(f"DEBUG: Session created - ID: {session_id}, Found: {session_context is not None}, Total sessions: {len(self.agent_worker.sessions)}")
+        self.logger.info(
+            "Session creation debug",
+            session_id=session_id,
+            session_found=session_context is not None,
+            agent_worker_id=id(self.agent_worker),
+            total_sessions=len(self.agent_worker.sessions)
+        )
+        
         # Start enhanced session tracking
         if session_context:
             self.metrics_collector.start_session(session_id, goal, session_context)
@@ -126,9 +147,19 @@ class LlamaAgent:
         Returns:
             Dictionary containing execution results and session info
         """
+        # Debug: Check available sessions
+        available_sessions = list(self.agent_worker.sessions.keys())
+        print(f"DEBUG: Execute goal - Session ID: {session_id}, Available: {available_sessions}, Worker ID: {id(self.agent_worker)}")
+        self.logger.info(
+            "Execute goal debug",
+            session_id=session_id,
+            available_sessions=available_sessions,
+            agent_worker_id=id(self.agent_worker)
+        )
+        
         session_context = self.agent_worker.get_session(session_id)
         if not session_context:
-            raise ValueError(f"Session {session_id} not found")
+            raise ValueError(f"Session {session_id} not found. Available sessions: {available_sessions}")
         
         self.logger.info(
             "Starting goal execution",
@@ -196,9 +227,10 @@ class LlamaAgent:
                 else:
                     execution_prompt = initial_prompt
                 
-                # Create a task with session metadata
+                # Create a task and store session context in agent worker
                 task = self.agent_runner.create_task(execution_prompt)
-                task.session_id = session_id  # Attach session ID to task
+                # Store current session ID in agent worker for access during execution
+                self.agent_worker._current_session_id = session_id
                 
                 self.logger.info(
                     "Executing agent task",
@@ -637,12 +669,19 @@ class LlamaAgent:
     
     async def health_check(self) -> Dict[str, Any]:
         """Perform a health check of the agent with session metrics."""
+        # Skip LlamaIndex validation and use direct Cerebras proxy health check
         try:
-            # Test LLM connectivity
-            test_response = await self.llm.acomplete("Hello")
-            llm_healthy = bool(test_response.text)
+            import httpx
+            health_url = f"{self.config.cerebras_proxy_url}/health"
+            async with httpx.AsyncClient() as client:
+                response = await client.get(health_url, timeout=5.0)
+                llm_healthy = response.status_code == 200
+                if llm_healthy:
+                    self.logger.info("Cerebras proxy health check succeeded")
+                else:
+                    self.logger.error(f"Cerebras proxy health check failed with status {response.status_code}")
         except Exception as e:
-            self.logger.error("LLM health check failed", error=str(e))
+            self.logger.error("Cerebras proxy health check failed", error=str(e))
             llm_healthy = False
         
         active_sessions = len(self.agent_worker.sessions)

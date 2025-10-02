@@ -2,17 +2,17 @@
 Custom LlamaIndex AgentWorker implementation for stateful MCP-based agents.
 """
 import uuid
+import time
 from typing import Dict, List, Optional, Any, Sequence
 from datetime import datetime
 import structlog
 
-from llama_index.core.agent.types import Task
+from llama_index.core.agent.types import Task, TaskStep, TaskStepOutput
 from llama_index.core.agent import CustomSimpleAgentWorker
 from llama_index.core.tools import BaseTool
 from llama_index.core.llms import LLM
 from llama_index.core.memory import BaseMemory
-from llama_index.core.agent.types import TaskStep, TaskStepOutput
-from llama_index.core.schema import AgentChatResponse
+from llama_index.core.base.llms.types import ChatResponse as AgentChatResponse
 
 from models import AgentSessionContext, AgentConfig, ToolExecution, MCPToolCall
 from metrics import get_metrics_collector
@@ -35,15 +35,40 @@ class StatefulAgentWorker(CustomSimpleAgentWorker):
         verbose: bool = False,
         **kwargs
     ):
+        # Store config before calling super().__init__ to avoid pydantic conflicts
+        self.__dict__['_agent_config'] = config
+        self.__dict__['sessions'] = {}
+        # Ensure logger is properly initialized
+        if logger is not None:
+            self.__dict__['logger'] = logger.bind(agent_id=config.agent_id)
+        else:
+            import structlog
+            self.__dict__['logger'] = structlog.get_logger(__name__).bind(agent_id=config.agent_id)
+        
         super().__init__(
             tools=tools,
             llm=llm,
             verbose=verbose,
             **kwargs
         )
-        self.config = config
-        self.sessions: Dict[str, AgentSessionContext] = {}
-        self.logger = logger.bind(agent_id=config.agent_id)
+    
+    @property
+    def sessions(self) -> Dict[str, Any]:
+        """Access sessions dictionary stored in __dict__ to avoid pydantic conflicts."""
+        sessions_dict = self.__dict__.get('sessions', {})
+        print(f"DEBUG: sessions property accessed - Current sessions: {list(sessions_dict.keys())}")
+        return sessions_dict
+    
+    @property
+    def logger(self):
+        """Access logger stored in __dict__ to avoid pydantic conflicts."""
+        stored_logger = self.__dict__.get('logger')
+        if stored_logger is None:
+            # Fallback: create a new logger if none exists
+            import structlog
+            stored_logger = structlog.get_logger(__name__).bind(agent_id=getattr(self, '_agent_config', {}).get('agent_id', 'unknown'))
+            self.__dict__['logger'] = stored_logger
+        return stored_logger
     
     def create_session(self, goal: str, session_id: Optional[str] = None) -> str:
         """
@@ -56,18 +81,44 @@ class StatefulAgentWorker(CustomSimpleAgentWorker):
         Returns:
             The session ID for the created session
         """
+        print(f"DEBUG: create_session called - Goal: {goal}")
         if session_id is None:
             session_id = str(uuid.uuid4())
+        print(f"DEBUG: Generated session_id: {session_id}")
         
         trace_id = str(uuid.uuid4())
         
-        session_context = AgentSessionContext(
-            session_id=session_id,
-            trace_id=trace_id,
-            goal=goal
-        )
-        
-        self.sessions[session_id] = session_context
+        try:
+            print(f"DEBUG: Creating session context - ID: {session_id}, Goal: {goal}")
+            session_context = AgentSessionContext(
+                session_id=session_id,
+                trace_id=trace_id,
+                goal=goal
+            )
+            print(f"DEBUG: Session context created successfully")
+            
+            # Access sessions dictionary directly from __dict__ to avoid pydantic conflicts
+            sessions_dict = self.__dict__.get('sessions', {})
+            print(f"DEBUG: Before storing - Current sessions: {len(sessions_dict)}, Keys: {list(sessions_dict.keys())}")
+            sessions_dict[session_id] = session_context
+            self.__dict__['sessions'] = sessions_dict
+            print(f"DEBUG: After storing - Total sessions now: {len(sessions_dict)}, Keys: {list(sessions_dict.keys())}")
+            
+            # Verify it was stored by accessing it again
+            updated_sessions_dict = self.__dict__.get('sessions', {})
+            retrieved = updated_sessions_dict.get(session_id)
+            print(f"DEBUG: Verification - Retrieved session: {retrieved is not None}, Total in dict: {len(updated_sessions_dict)}")
+            
+            # Also check via the property
+            property_sessions = self.sessions
+            property_retrieved = property_sessions.get(session_id)
+            print(f"DEBUG: Property check - Retrieved via property: {property_retrieved is not None}, Total via property: {len(property_sessions)}")
+            
+        except Exception as e:
+            print(f"DEBUG: Session creation failed - Error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
         
         self.logger.info(
             "Created new agent session",
@@ -80,7 +131,11 @@ class StatefulAgentWorker(CustomSimpleAgentWorker):
     
     def get_session(self, session_id: str) -> Optional[AgentSessionContext]:
         """Get session context by ID."""
-        return self.sessions.get(session_id)
+        sessions_dict = self.__dict__.get('sessions', {})
+        print(f"DEBUG: get_session called - ID: {session_id}, Available sessions: {list(sessions_dict.keys())}")
+        result = sessions_dict.get(session_id)
+        print(f"DEBUG: get_session result - Found: {result is not None}")
+        return result
     
     def update_session_data(self, session_id: str, data: Dict[str, Any]):
         """Update session data (cookies, tokens, etc.)."""
@@ -92,12 +147,15 @@ class StatefulAgentWorker(CustomSimpleAgentWorker):
         """Remove expired sessions to prevent memory leaks."""
         expired_sessions = []
         for session_id, context in self.sessions.items():
-            if context.is_expired(self.config.session_timeout_minutes):
+            if context.is_expired(self._agent_config.session_timeout_minutes):
                 expired_sessions.append(session_id)
         
         for session_id in expired_sessions:
             del self.sessions[session_id]
             self.logger.info("Cleaned up expired session", session_id=session_id)
+        
+        if expired_sessions:
+            self.logger.info("Session cleanup completed", expired_count=len(expired_sessions), remaining_sessions=len(self.sessions))
     
     def _run_step(
         self,
@@ -109,15 +167,15 @@ class StatefulAgentWorker(CustomSimpleAgentWorker):
         Execute a single step in the agent workflow with enhanced error handling.
         Overrides the base implementation to add session context management and error categorization.
         """
-        # Extract session_id from task metadata if available
-        session_id = getattr(task, 'session_id', None)
+        # Get session_id from stored context in agent worker
+        session_id = getattr(self, '_current_session_id', None)
         session_context = None
         
         if session_id:
             session_context = self.get_session(session_id)
             if session_context:
                 # Check if session has expired or reached max steps
-                if session_context.is_expired(self.config.session_timeout_minutes):
+                if session_context.is_expired(self._agent_config.session_timeout_minutes):
                     self.logger.warning("Session expired", session_id=session_id)
                     return TaskStepOutput(
                         output=AgentChatResponse(response="Session expired"),
@@ -348,3 +406,72 @@ class StatefulAgentWorker(CustomSimpleAgentWorker):
             )
         
         return response
+    
+    def _initialize_state(self, task: Task, **kwargs) -> Dict[str, Any]:
+        """
+        Initialize state for a new task.
+        
+        Args:
+            task: The task to initialize state for
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            Dictionary containing initial state
+        """
+        # Initialize basic state
+        state = {
+            "task_id": task.task_id,
+            "step_count": 0,
+            "start_time": time.time(),
+            "session_id": getattr(task, 'session_id', None)
+        }
+        
+        # If task has a session_id, link it to our session management
+        session_id = getattr(task, 'session_id', None)
+        if session_id and session_id in self.sessions:
+            session_context = self.sessions[session_id]
+            state["session_context"] = {
+                "goal": session_context.goal,
+                "current_step": session_context.current_step,
+                "session_data": session_context.session_data.copy()
+            }
+            
+            self.logger.info(
+                "Task state initialized with session context",
+                task_id=task.task_id,
+                session_id=session_id,
+                goal=session_context.goal
+            )
+        else:
+            self.logger.info(
+                "Task state initialized without session context",
+                task_id=task.task_id
+            )
+        
+        return state
+    
+    def _finalize_task(self, task: Task, **kwargs) -> None:
+        """
+        Finalize a completed task.
+        
+        Args:
+            task: The task to finalize
+            **kwargs: Additional keyword arguments
+        """
+        # Update session context if available
+        session_id = getattr(task, 'session_id', None)
+        if session_id and session_id in self.sessions:
+            session_context = self.sessions[session_id]
+            session_context.update_last_action()
+            
+            self.logger.info(
+                "Task finalized with session update",
+                task_id=task.task_id,
+                session_id=session_id,
+                total_steps=session_context.current_step
+            )
+        else:
+            self.logger.info(
+                "Task finalized without session context",
+                task_id=task.task_id
+            )

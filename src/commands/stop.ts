@@ -51,8 +51,26 @@ export async function stopCommand(options: StopOptions): Promise<void> {
       console.log(chalk.blue('\n🔄 Graceful shutdown will allow containers to clean up properly'));
     }
     
-    // Stop services - Requirements 5.3
+    // Stop core APE services - Requirements 5.3
     await dockerManager.stop(options.force);
+    
+    // Also stop observability stack if it exists
+    const observabilityCompose = path.join(projectDir, 'config', 'observability.docker-compose.yml');
+    if (await fs.pathExists(observabilityCompose)) {
+      spinner.text = 'Stopping observability stack...';
+      
+      const observabilityManager = new DockerComposeManager(
+        path.join(projectDir, 'config'),
+        'observability.docker-compose.yml',
+        `${path.basename(projectDir)}-observability`
+      );
+      
+      try {
+        await observabilityManager.stop(options.force);
+      } catch (error) {
+        spinner.warn('Failed to stop observability stack, continuing...');
+      }
+    }
     
     // Verify all services are stopped
     spinner.text = 'Verifying shutdown...';

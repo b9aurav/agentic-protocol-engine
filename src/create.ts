@@ -8,7 +8,7 @@ import { version } from '../package.json';
 const program = new Command();
 
 program
-  .name('create-ape-test')
+  .name('create-ape-load')
   .description('Create and configure a new APE load test environment')
   .version(version);
 

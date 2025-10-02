@@ -13,7 +13,7 @@ import { version } from '../package.json';
 const program = new Command();
 
 program
-  .name('ape-test')
+  .name('ape-load')
   .description('Agentic Protocol Engine - AI-driven load testing tool')
   .version(version);
 

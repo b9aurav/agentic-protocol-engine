@@ -14,7 +14,6 @@ import {
   generateApplicationDockerOverride
 } from '../templates/application-types';
 import { 
-  ConfigValidator, 
   validateConfiguration, 
   formatValidationResults 
 } from '../utils/config-validator';
@@ -649,4 +648,25 @@ For more information, visit: https://github.com/b9aurav/agentic-protocol-engine
 `;
 
   await fs.writeFile(path.join(projectPath, 'README.md'), readme);
+
+  // Copy services directory to project - Required for Docker builds
+  const servicesSourcePath = path.join(__dirname, '..', '..', 'services');
+  const servicesDestPath = path.join(projectPath, 'services');
+  
+  try {
+    await fs.copy(servicesSourcePath, servicesDestPath, {
+      overwrite: true,
+      filter: (src) => {
+        // Exclude Python cache files and other build artifacts
+        const relativePath = path.relative(servicesSourcePath, src);
+        return !relativePath.includes('__pycache__') && 
+               !relativePath.includes('.pyc') && 
+               !relativePath.includes('.pytest_cache') &&
+               !relativePath.endsWith('.log');
+      }
+    });
+  } catch (error) {
+    console.warn(chalk.yellow('⚠️  Warning: Could not copy services directory. You may need to copy it manually.'));
+    console.warn(chalk.gray(`   Services should be copied from the package installation to: ${servicesDestPath}`));
+  }
 }

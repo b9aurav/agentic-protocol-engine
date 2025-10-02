@@ -23,7 +23,12 @@ class HTTPGetTool(BaseTool):
     def __init__(self, mcp_gateway_url: str, agent_worker: Optional[Any] = None):
         self.mcp_gateway_url = mcp_gateway_url.rstrip('/')
         self.agent_worker = agent_worker
-        super().__init__(
+        super().__init__()
+    
+    @property
+    def metadata(self):
+        from llama_index.core.tools.tool_spec.base import ToolMetadata
+        return ToolMetadata(
             name="http_get",
             description=(
                 "Perform HTTP GET request through MCP Gateway. "
@@ -31,6 +36,9 @@ class HTTPGetTool(BaseTool):
                 "Parameters: api_name (str), path (str), headers (dict, optional)"
             )
         )
+    
+    def __call__(self, api_name: str, path: str, headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
+        return self.call(api_name, path, headers, **kwargs)
     
     def call(self, api_name: str, path: str, headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
         """
@@ -223,7 +231,12 @@ class HTTPPostTool(BaseTool):
     def __init__(self, mcp_gateway_url: str, agent_worker: Optional[Any] = None):
         self.mcp_gateway_url = mcp_gateway_url.rstrip('/')
         self.agent_worker = agent_worker
-        super().__init__(
+        super().__init__()
+    
+    @property
+    def metadata(self):
+        from llama_index.core.tools.tool_spec.base import ToolMetadata
+        return ToolMetadata(
             name="http_post",
             description=(
                 "Perform HTTP POST request through MCP Gateway. "
@@ -231,6 +244,9 @@ class HTTPPostTool(BaseTool):
                 "Parameters: api_name (str), path (str), data (dict), headers (dict, optional)"
             )
         )
+    
+    def __call__(self, api_name: str, path: str, data: Dict[str, Any], headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
+        return self.call(api_name, path, data, headers, **kwargs)
     
     def call(self, api_name: str, path: str, data: Dict[str, Any], headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
         """
@@ -419,7 +435,12 @@ class HTTPPutTool(BaseTool):
     def __init__(self, mcp_gateway_url: str, agent_worker: Optional[Any] = None):
         self.mcp_gateway_url = mcp_gateway_url.rstrip('/')
         self.agent_worker = agent_worker
-        super().__init__(
+        super().__init__()
+    
+    @property
+    def metadata(self):
+        from llama_index.core.tools.tool_spec.base import ToolMetadata
+        return ToolMetadata(
             name="http_put",
             description=(
                 "Perform HTTP PUT request through MCP Gateway. "
@@ -427,6 +448,9 @@ class HTTPPutTool(BaseTool):
                 "Parameters: api_name (str), path (str), data (dict), headers (dict, optional)"
             )
         )
+    
+    def __call__(self, api_name: str, path: str, data: Dict[str, Any], headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
+        return self.call(api_name, path, data, headers, **kwargs)
     
     def call(self, api_name: str, path: str, data: Dict[str, Any], headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
         """
@@ -542,7 +566,12 @@ class HTTPDeleteTool(BaseTool):
     def __init__(self, mcp_gateway_url: str, agent_worker: Optional[Any] = None):
         self.mcp_gateway_url = mcp_gateway_url.rstrip('/')
         self.agent_worker = agent_worker
-        super().__init__(
+        super().__init__()
+    
+    @property
+    def metadata(self):
+        from llama_index.core.tools.tool_spec.base import ToolMetadata
+        return ToolMetadata(
             name="http_delete",
             description=(
                 "Perform HTTP DELETE request through MCP Gateway. "
@@ -550,6 +579,9 @@ class HTTPDeleteTool(BaseTool):
                 "Parameters: api_name (str), path (str), headers (dict, optional)"
             )
         )
+    
+    def __call__(self, api_name: str, path: str, headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
+        return self.call(api_name, path, headers, **kwargs)
     
     def call(self, api_name: str, path: str, headers: Optional[Dict[str, str]] = None, **kwargs) -> Dict[str, Any]:
         """
@@ -652,7 +684,12 @@ class StateUpdateTool(BaseTool):
     
     def __init__(self, agent_worker: Optional[Any] = None):
         self.agent_worker = agent_worker
-        super().__init__(
+        super().__init__()
+    
+    @property
+    def metadata(self):
+        from llama_index.core.tools.tool_spec.base import ToolMetadata
+        return ToolMetadata(
             name="state_update",
             description=(
                 "Update internal session context and state. "
@@ -660,6 +697,9 @@ class StateUpdateTool(BaseTool):
                 "Parameters: session_id (str), session_data (dict)"
             )
         )
+    
+    def __call__(self, session_id: str, session_data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+        return self.call(session_id, session_data, **kwargs)
     
     def call(self, session_id: str, session_data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """

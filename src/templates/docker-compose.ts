@@ -1,5 +1,24 @@
 import { SetupAnswers } from '../commands/setup';
 
+/**
+ * Get an available port that doesn't conflict with the target application
+ */
+function getAvailablePort(targetPort: number, preferredPort: number): number {
+  // If preferred port conflicts with target, find alternative
+  if (preferredPort === targetPort) {
+    // Use non-standard port ranges to avoid conflicts
+    const alternatives = [13000, 14000, 15000, 16000, 17000, 18000];
+    for (const port of alternatives) {
+      if (port !== targetPort) {
+        return port;
+      }
+    }
+    // Fallback: use target port + 10000 to avoid common ranges
+    return targetPort + 10000;
+  }
+  return preferredPort;
+}
+
 export interface DockerComposeConfig {
   version: string;
   services: Record<string, any>;
@@ -9,7 +28,7 @@ export interface DockerComposeConfig {
 
 export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig {
   const networkName = `${config.projectName}_network`;
-  
+
   // Dynamic scaling configuration based on user inputs - Requirements 6.1, 6.4
   const agentResourceLimits = calculateAgentResources(config.agentCount);
   const networkSubnet = generateNetworkSubnet(config.projectName);
@@ -19,9 +38,12 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
     services: {
       // MCP Gateway Service - Optimized for Requirements 6.2, 6.3, 6.4
       mcp_gateway: {
-        image: 'ape/mcp-gateway:latest',
+        build: {
+          context: './services/mcp-gateway',
+          dockerfile: 'Dockerfile'
+        },
         container_name: `${config.projectName}_mcp_gateway`,
-        ports: ['3000:3000', '8001:8001'], // Main port and metrics port
+        ports: [`${getAvailablePort(config.targetPort, 13000)}:3000`, '13001:8001'], // Main port and metrics port
         environment: {
           NODE_ENV: 'production',
           LOG_LEVEL: 'info',
@@ -88,9 +110,12 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
 
       // Cerebras Proxy Service - Optimized for Requirements 2.1, 2.3, 6.4
       cerebras_proxy: {
-        image: 'ape/cerebras-proxy:latest',
+        build: {
+          context: './services/cerebras-proxy',
+          dockerfile: 'Dockerfile'
+        },
         container_name: `${config.projectName}_cerebras_proxy`,
-        ports: ['8000:8000', '8002:8002'], // Main port and metrics port
+        ports: ['18000:8000', '18002:8002'], // Main port and metrics port
         environment: {
           CEREBRAS_API_KEY: '${CEREBRAS_API_KEY}',
           LOG_LEVEL: 'info',
@@ -150,8 +175,12 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
 
       // Llama Agent Service - Optimized for Requirements 1.1, 6.1, 6.4
       llama_agent: {
-        image: 'ape/llama-agent:latest',
-        ports: ['8000'], // Expose metrics port for Prometheus scraping
+        build: {
+          context: './services/llama-agent',
+          dockerfile: 'Dockerfile'
+        },
+        // Use expose instead of ports to avoid conflicts when scaling
+        expose: ['8000'], // Expose metrics port for Prometheus scraping (internal only)
         environment: {
           MCP_GATEWAY_URL: 'http://mcp_gateway:3000',
           AGENT_GOAL: config.testGoal,
@@ -196,12 +225,9 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
         },
         deploy: {
           replicas: config.agentCount,
-          resources: agentResourceLimits,
-          update_config: agentResourceLimits.update_config,
-          restart_policy: agentResourceLimits.restart_policy,
-          // Placement constraints for optimal resource distribution
-          placement: {
-            max_replicas_per_node: Math.max(1, Math.floor(100 / Math.sqrt(config.agentCount)))
+          resources: {
+            limits: agentResourceLimits.limits,
+            reservations: agentResourceLimits.reservations
           }
         },
         // Optimized logging for high-scale deployments
@@ -232,7 +258,7 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
       },
 
       // Observability Stack - Requirements 4.1, 4.4, 4.5
-      
+
       // Loki for log aggregation
       loki: {
         image: 'grafana/loki:2.9.0',
@@ -336,9 +362,10 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
         networks: [networkName],
         restart: 'unless-stopped',
         command: [
+          '/usr/bin/cadvisor',
           '--housekeeping_interval=10s',
           '--docker_only=true',
-          '--disable_metrics=percpu,sched,tcp,udp,disk,diskIO,accelerator,hugetlb,referenced_memory,cpu_topology,resctrl'
+          '--disable_metrics=percpu,sched,tcp,udp,disk,diskIO,hugetlb,referenced_memory,cpu_topology,resctrl'
         ],
         logging: {
           driver: 'json-file',
@@ -389,6 +416,10 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           GF_USERS_ALLOW_SIGN_UP: 'false',
           GF_INSTALL_PLUGINS: 'grafana-piechart-panel,grafana-worldmap-panel',
           GF_FEATURE_TOGGLES_ENABLE: 'traceqlEditor',
+          // Enable anonymous access for localhost development
+          GF_AUTH_ANONYMOUS_ENABLED: 'true',
+          GF_AUTH_ANONYMOUS_ORG_ROLE: 'Admin',
+          GF_AUTH_DISABLE_LOGIN_FORM: 'true',
           PROJECT_NAME: config.projectName
         },
         volumes: [
@@ -413,21 +444,7 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
     // Network configuration for inter-service communication - Requirements 6.3
     networks: {
       [networkName]: {
-        driver: 'bridge',
-        name: `${config.projectName}_ape_network`,
-        ipam: {
-          driver: 'default',
-          config: [
-            {
-              subnet: networkSubnet,
-              gateway: networkSubnet.replace('0.0/16', '0.1')
-            }
-          ]
-        },
-        driver_opts: {
-          'com.docker.network.bridge.name': `br-${config.projectName}`,
-          'com.docker.network.driver.mtu': '1500'
-        }
+        driver: 'bridge'
       }
     },
 
@@ -463,7 +480,7 @@ export function generatePrometheusConfig(config: SetupAnswers): any {
         ],
         scrape_interval: '30s'
       },
-      
+
       // cAdvisor for container metrics
       {
         job_name: 'cadvisor',
@@ -489,7 +506,7 @@ export function generatePrometheusConfig(config: SetupAnswers): any {
           }
         ]
       },
-      
+
       // Node Exporter for host system metrics
       {
         job_name: 'node-exporter',
@@ -500,7 +517,7 @@ export function generatePrometheusConfig(config: SetupAnswers): any {
         ],
         scrape_interval: '15s'
       },
-      
+
       // MCP Gateway metrics
       {
         job_name: 'mcp-gateway',
@@ -510,10 +527,10 @@ export function generatePrometheusConfig(config: SetupAnswers): any {
           }
         ],
         metrics_path: '/metrics',
-        scrape_interval: '5s',
+        scrape_interval: '15s',
         scrape_timeout: '10s'
       },
-      
+
       // Cerebras Proxy metrics
       {
         job_name: 'cerebras-proxy',
@@ -523,10 +540,10 @@ export function generatePrometheusConfig(config: SetupAnswers): any {
           }
         ],
         metrics_path: '/metrics',
-        scrape_interval: '5s',
+        scrape_interval: '15s',
         scrape_timeout: '10s'
       },
-      
+
       // APE Agent metrics (dynamic discovery)
       {
         job_name: 'ape-agents',
@@ -570,7 +587,7 @@ export function generatePrometheusConfig(config: SetupAnswers): any {
             replacement: '${1}'
           }
         ],
-        scrape_interval: '5s',
+        scrape_interval: '15s',
         metrics_path: '/metrics',
         scrape_timeout: '10s'
       }
@@ -658,7 +675,7 @@ function calculateAgentResources(agentCount: number): any {
   let cpuLimit = '0.5';
   let memoryReservation = '256M';
   let cpuReservation = '0.25';
-  
+
   // Optimized resource scaling for high-density deployments
   if (agentCount > 500) {
     // Ultra-high scale: minimal per-agent resources for 1000+ agents
@@ -695,41 +712,27 @@ function calculateAgentResources(agentCount: number): any {
     reservations: {
       memory: memoryReservation,
       cpus: cpuReservation
-    },
-    // Additional optimization settings
-    update_config: {
-      parallelism: Math.min(agentCount, 10), // Update max 10 agents at once
-      delay: '2s',
-      failure_action: 'rollback',
-      monitor: '10s'
-    },
-    restart_policy: {
-      condition: 'on-failure',
-      delay: '3s',
-      max_attempts: 3,
-      window: '60s'
     }
   };
 }
 
 // Helper function to generate unique network subnet for each project - Requirements 6.3
 function generateNetworkSubnet(projectName: string): string {
-  // Generate a deterministic subnet based on project name hash
+  // Use a simple, safe subnet range that's less likely to conflict
+  // Generate a simple hash for the project name
   let hash = 0;
   for (let i = 0; i < projectName.length; i++) {
-    const char = projectName.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
+    hash = ((hash << 5) - hash) + projectName.charCodeAt(i);
   }
-  
-  // Use hash to generate a subnet in the 172.20-30.x.x range
-  const subnetBase = 20 + (Math.abs(hash) % 11); // 172.20.0.0 to 172.30.0.0
-  return `172.${subnetBase}.0.0/16`;
+
+  // Use a smaller, safer range: 172.28.x.0/24 (avoids common Docker ranges)
+  const subnetId = Math.abs(hash) % 255; // 0-254
+  return `172.28.${subnetId}.0/24`;
 }
 // Enhanced Docker Compose generation with environment specific configurations
 export function generateDockerComposeWithEnvironment(config: SetupAnswers, environment: 'development' | 'staging' | 'production' = 'production'): DockerComposeConfig {
   const baseConfig = generateDockerCompose(config);
-  
+
   // Apply environment-specific optimizations
   switch (environment) {
     case 'development':
@@ -745,7 +748,7 @@ export function generateDockerComposeWithEnvironment(config: SetupAnswers, envir
 function applyDevelopmentConfig(config: DockerComposeConfig, _setupConfig: SetupAnswers): DockerComposeConfig {
   // Development optimizations: faster startup, more verbose logging, hot reload
   const devConfig = { ...config };
-  
+
   // Enable debug logging for all services
   Object.keys(devConfig.services).forEach(serviceName => {
     const service = devConfig.services[serviceName];
@@ -753,7 +756,7 @@ function applyDevelopmentConfig(config: DockerComposeConfig, _setupConfig: Setup
       service.environment.LOG_LEVEL = 'debug';
     }
   });
-  
+
   // Add development-specific volumes for hot reload
   if (devConfig.services.mcp_gateway) {
     devConfig.services.mcp_gateway.volumes = [
@@ -761,14 +764,14 @@ function applyDevelopmentConfig(config: DockerComposeConfig, _setupConfig: Setup
       './src:/app/src:ro' // Hot reload for development
     ];
   }
-  
+
   return devConfig;
 }
 
 function applyStagingConfig(config: DockerComposeConfig, _setupConfig: SetupAnswers): DockerComposeConfig {
   // Staging optimizations: production-like but with enhanced monitoring
   const stagingConfig = { ...config };
-  
+
   // Add staging-specific environment variables
   Object.keys(stagingConfig.services).forEach(serviceName => {
     const service = stagingConfig.services[serviceName];
@@ -777,14 +780,14 @@ function applyStagingConfig(config: DockerComposeConfig, _setupConfig: SetupAnsw
       service.environment.METRICS_DETAILED = 'true';
     }
   });
-  
+
   return stagingConfig;
 }
 
 function applyProductionConfig(config: DockerComposeConfig, _setupConfig: SetupAnswers): DockerComposeConfig {
   // Production optimizations: security, performance, reliability
   const prodConfig = { ...config };
-  
+
   // Add production security headers and optimizations
   Object.keys(prodConfig.services).forEach(serviceName => {
     const service = prodConfig.services[serviceName];
@@ -792,19 +795,19 @@ function applyProductionConfig(config: DockerComposeConfig, _setupConfig: SetupA
       service.environment.ENVIRONMENT = 'production';
       service.environment.SECURITY_HEADERS = 'true';
     }
-    
+
     // Add security options for production
     service.security_opt = ['no-new-privileges:true'];
     service.read_only = serviceName !== 'prometheus' && serviceName !== 'grafana' && serviceName !== 'loki'; // Allow writes only for data services
   });
-  
+
   return prodConfig;
 }
 
 // Utility function to validate Docker Compose configuration
 export function validateDockerComposeConfig(config: DockerComposeConfig): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
-  
+
   // Validate required services
   const requiredServices = ['mcp_gateway', 'cerebras_proxy', 'llama_agent', 'prometheus', 'grafana'];
   for (const service of requiredServices) {
@@ -812,26 +815,83 @@ export function validateDockerComposeConfig(config: DockerComposeConfig): { vali
       errors.push(`Missing required service: ${service}`);
     }
   }
-  
+
+  // Validate port conflicts
+  const usedPorts = new Set<number>();
+  for (const [serviceName, serviceConfig] of Object.entries(config.services)) {
+    if (serviceConfig.ports) {
+      for (const portMapping of serviceConfig.ports) {
+        const hostPort = parseInt(portMapping.split(':')[0]);
+        if (usedPorts.has(hostPort)) {
+          errors.push(`Port conflict: ${hostPort} is used by multiple services`);
+        }
+        usedPorts.add(hostPort);
+      }
+    }
+  }
+
   // Validate network configuration
   if (!config.networks || Object.keys(config.networks).length === 0) {
     errors.push('No networks defined');
   }
-  
+
   // Validate volumes for data persistence
   if (!config.volumes || !config.volumes.prometheus_data || !config.volumes.grafana_data) {
     errors.push('Missing required persistent volumes');
   }
-  
+
   // Validate service dependencies
   if (config.services.llama_agent && !config.services.llama_agent.depends_on) {
     errors.push('llama_agent service missing required dependencies');
   }
-  
+
   return {
     valid: errors.length === 0,
     errors
   };
+}
+
+// Utility function to validate Prometheus configuration
+export function validatePrometheusConfig(config: any): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!config.scrape_configs) {
+    errors.push('Missing scrape_configs in Prometheus configuration');
+    return { valid: false, errors };
+  }
+
+  // Validate scrape configurations
+  for (const scrapeConfig of config.scrape_configs) {
+    if (scrapeConfig.scrape_timeout && scrapeConfig.scrape_interval) {
+      const timeoutMs = parseTimeToMs(scrapeConfig.scrape_timeout);
+      const intervalMs = parseTimeToMs(scrapeConfig.scrape_interval);
+
+      if (timeoutMs >= intervalMs) {
+        errors.push(`Invalid scrape config for job '${scrapeConfig.job_name}': timeout (${scrapeConfig.scrape_timeout}) must be less than interval (${scrapeConfig.scrape_interval})`);
+      }
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
+// Helper function to parse time strings to milliseconds
+function parseTimeToMs(timeStr: string): number {
+  const match = timeStr.match(/^(\d+)([smh])$/);
+  if (!match) return 0;
+
+  const value = parseInt(match[1]);
+  const unit = match[2];
+
+  switch (unit) {
+    case 's': return value * 1000;
+    case 'm': return value * 60 * 1000;
+    case 'h': return value * 60 * 60 * 1000;
+    default: return 0;
+  }
 }
 
 // Graceful scaling and shutdown utilities for Requirements 6.1, 6.4
@@ -846,13 +906,13 @@ export interface ScalingConfig {
 export function generateScalingStrategy(config: ScalingConfig): any {
   const isScalingUp = config.targetAgents > config.currentAgents;
   const agentDifference = Math.abs(config.targetAgents - config.currentAgents);
-  
+
   // Calculate optimal batch size for scaling operations
   const batchSize = Math.min(
     config.maxConcurrentUpdates,
     Math.max(1, Math.ceil(agentDifference / 10)) // Scale in 10% increments
   );
-  
+
   return {
     strategy: isScalingUp ? 'scale-up' : 'scale-down',
     batchSize,
@@ -880,12 +940,12 @@ export function generateGracefulShutdownConfig(agentCount: number): any {
   const baseTimeout = 10;
   const scalingFactor = Math.ceil(agentCount / 100);
   const shutdownTimeout = Math.min(baseTimeout + scalingFactor * 5, 60); // Max 60s
-  
+
   return {
     // Graceful shutdown configuration
     stop_grace_period: `${shutdownTimeout}s`,
     stop_signal: 'SIGTERM',
-    
+
     // Health check during shutdown
     healthcheck_during_shutdown: {
       test: ['CMD', 'curl', '-f', 'http://localhost:8000/health'],
@@ -893,7 +953,7 @@ export function generateGracefulShutdownConfig(agentCount: number): any {
       timeout: '3s',
       retries: 2
     },
-    
+
     // Resource cleanup
     cleanup_config: {
       remove_volumes: false, // Preserve data volumes
@@ -921,7 +981,7 @@ export function generateResourceMonitoringConfig(agentCount: number): any {
         container_restart: true
       }
     },
-    
+
     // Agent scaling metrics
     scaling_metrics: {
       concurrent_agents: {
@@ -935,7 +995,7 @@ export function generateResourceMonitoringConfig(agentCount: number): any {
         network_bandwidth: '10Mbps'
       }
     },
-    
+
     // Performance optimization
     performance_tuning: {
       container_startup_stagger: Math.min(10, Math.ceil(agentCount / 50)), // Stagger startup
@@ -944,4 +1004,260 @@ export function generateResourceMonitoringConfig(agentCount: number): any {
       metrics_sampling_rate: agentCount > 500 ? 0.1 : 1.0 // Sample 10% of metrics for large deployments
     }
   };
+}
+// Template functions for generating service Dockerfiles and requirements
+
+export function generateCerebrasProxyDockerfile(): string {
+  return `# Multi-stage build for optimized container size
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \\
+    gcc \\
+    g++ \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Production stage
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y \\
+    curl \\
+    && rm -rf /var/lib/apt/lists/* \\
+    && apt-get clean
+
+# Create non-root user for security
+RUN groupadd -r cerebras && useradd -r -g cerebras -u 1002 cerebras \\
+    && mkdir -p /app/logs /app/tmp /home/cerebras/.local \\
+    && chown -R cerebras:cerebras /app /home/cerebras
+
+# Copy Python packages from builder stage to user directory
+COPY --from=builder --chown=cerebras:cerebras /root/.local /home/cerebras/.local
+
+# Ensure executable permissions on installed binaries
+RUN chmod +x /home/cerebras/.local/bin/*
+
+# Copy source code
+COPY --chown=cerebras:cerebras src/ ./src/
+COPY --chown=cerebras:cerebras config/ ./config/
+
+# Switch to non-root user
+USER cerebras
+
+# Set environment variables for optimization
+ENV PYTHONPATH=/app \\
+    PYTHONUNBUFFERED=1 \\
+    PYTHONDONTWRITEBYTECODE=1 \\
+    PATH=/home/cerebras/.local/bin:$PATH \\
+    # Memory optimization
+    MALLOC_ARENA_MAX=2 \\
+    # Resource monitoring
+    METRICS_ENABLED=true \\
+    METRICS_PORT=8002
+
+# Health check for container orchestration
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \\
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose ports
+EXPOSE 8000 8002
+
+# Use exec form with optimized uvicorn settings for better performance
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", \\
+     "--access-log", "--log-level", "info"]
+`;
+}
+
+export function generateCerebrasProxyRequirements(): string {
+  return `fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+httpx==0.25.2
+structlog==23.2.0
+python-multipart==0.0.6
+python-dotenv==1.0.0
+`;
+}
+
+export function generateLlamaAgentDockerfile(): string {
+  return `# Multi-stage build for optimized container size and startup time
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \\
+    gcc \\
+    g++ \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Production stage
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y \\
+    curl \\
+    && rm -rf /var/lib/apt/lists/* \\
+    && apt-get clean
+
+# Create non-root user for security and resource isolation
+RUN groupadd -r agent && useradd -r -g agent -u 1001 agent \\
+    && mkdir -p /app/logs /app/tmp /home/agent/.local \\
+    && chown -R agent:agent /app /home/agent
+
+# Copy Python packages from builder stage to user directory
+COPY --from=builder --chown=agent:agent /root/.local /home/agent/.local
+
+# Ensure executable permissions on installed binaries
+RUN chmod +x /home/agent/.local/bin/*
+
+# Copy application code
+COPY --chown=agent:agent . .
+
+# Switch to non-root user
+USER agent
+
+# Set environment variables for optimization
+ENV PYTHONPATH=/app \\
+    PYTHONUNBUFFERED=1 \\
+    PYTHONDONTWRITEBYTECODE=1 \\
+    PATH=/home/agent/.local/bin:$PATH \\
+    # Memory optimization
+    MALLOC_ARENA_MAX=2 \\
+    # Agent-specific optimizations
+    AGENT_STARTUP_TIMEOUT=30 \\
+    AGENT_GRACEFUL_SHUTDOWN_TIMEOUT=10 \\
+    # Resource monitoring
+    METRICS_ENABLED=true \\
+    METRICS_PORT=8000
+
+# Health check for container orchestration
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \\
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose metrics port
+EXPOSE 8000
+
+# Use optimized startup script for better resource management and graceful shutdown
+CMD ["python", "-u", "startup.py"]
+`;
+}
+
+export function generateLlamaAgentRequirements(): string {
+  return `llama-index==0.8.69
+llama-index-llms-openai==0.1.5
+pydantic==2.5.0
+httpx==0.25.0
+python-dotenv==1.0.0
+structlog==23.2.0
+uvloop==0.19.0
+prometheus-client==0.19.0
+fastapi==0.104.1
+uvicorn==0.24.0
+psutil==5.9.6
+langchain-community==0.0.38
+langchain-core==0.1.52
+`;
+}
+
+export function generateMCPGatewayDockerfile(): string {
+  return `# MCP Gateway Dockerfile - Optimized for Requirements 6.1, 6.3, 6.4
+# Multi-stage build for optimized container size and startup time
+
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \\
+    gcc \\
+    g++ \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Production stage
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y \\
+    curl \\
+    && rm -rf /var/lib/apt/lists/* \\
+    && apt-get clean
+
+# Create non-root user for security and resource isolation
+RUN groupadd -r mcp-gateway && useradd -r -g mcp-gateway -u 1003 mcp-gateway \\
+    && mkdir -p /app/logs /app/tmp /app/config /home/mcp-gateway/.local \\
+    && chown -R mcp-gateway:mcp-gateway /app /home/mcp-gateway
+
+# Copy Python packages from builder stage to user directory
+COPY --from=builder --chown=mcp-gateway:mcp-gateway /root/.local /home/mcp-gateway/.local
+
+# Ensure executable permissions on installed binaries
+RUN chmod +x /home/mcp-gateway/.local/bin/*
+
+# Copy application code
+COPY --chown=mcp-gateway:mcp-gateway src/ ./src/
+COPY --chown=mcp-gateway:mcp-gateway config/ ./config/
+
+# Switch to non-root user
+USER mcp-gateway
+
+# Set environment variables for optimization
+ENV PYTHONPATH=/app \\
+    PYTHONUNBUFFERED=1 \\
+    PYTHONDONTWRITEBYTECODE=1 \\
+    PATH=/home/mcp-gateway/.local/bin:$PATH \\
+    # Memory optimization
+    MALLOC_ARENA_MAX=2 \\
+    # MCP Gateway configuration
+    MCP_GATEWAY_CONFIG=/app/config/mcp-gateway.json \\
+    # Resource monitoring
+    METRICS_ENABLED=true \\
+    METRICS_PORT=8001 \\
+    # Graceful shutdown
+    GRACEFUL_SHUTDOWN_TIMEOUT=15
+
+# Health check optimized for faster startup detection
+HEALTHCHECK --interval=15s --timeout=5s --start-period=25s --retries=3 \\
+    CMD curl -f http://localhost:3000/health || exit 1
+
+# Expose ports
+EXPOSE 3000 8001
+
+# Use exec form with optimized uvicorn settings for high-concurrency load
+CMD ["uvicorn", "src.gateway:app", "--host", "0.0.0.0", "--port", "3000", \\
+     "--backlog", "2048", "--access-log", "--log-level", "info", \\
+     "--timeout-keep-alive", "5"]
+`;
+}
+
+export function generateMCPGatewayRequirements(): string {
+  return `fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+httpx==0.25.2
+structlog==23.2.0
+python-multipart==0.0.6
+python-dotenv==1.0.0
+prometheus-client==0.19.0
+`;
 }

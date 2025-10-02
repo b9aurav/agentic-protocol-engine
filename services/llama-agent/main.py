@@ -42,6 +42,12 @@ structlog.configure(
 
 logger = structlog.get_logger(__name__)
 
+# Global agent instance for API access
+_global_agent_instance = None
+
+def get_agent_instance():
+    """Get the global agent instance."""
+    return _global_agent_instance
 
 class AgentService:
     """Main service class for the Llama Agent."""
@@ -74,11 +80,12 @@ class AgentService:
             # Initialize metrics
             self.metrics_collector = initialize_metrics(self.config.agent_id)
             
-            # Start metrics HTTP server
-            await self._start_metrics_server()
+            # Metrics server is handled by startup.py
             
             # Initialize the agent
             self.agent = LlamaAgent(self.config)
+            global _global_agent_instance
+            _global_agent_instance = self.agent
             self.running = True
             
             # Perform health check
@@ -96,26 +103,195 @@ class AgentService:
             sys.exit(1)
     
     async def _service_loop(self):
-        """Main service loop."""
+        """Main service loop with AI-driven load testing."""
         logger.info("Agent service started successfully")
+        logger.info("Starting AI-driven load testing mode")
         
-        # For now, just keep the service running
-        # In a full implementation, this would handle incoming requests
-        # via HTTP API, message queue, or other communication mechanism
+        # AI-driven load testing scenarios
+        realistic_scenarios = [
+            "Complete user registration and profile setup flow",
+            "Perform e-commerce product search and purchase journey", 
+            "Test user authentication and session management",
+            "Validate API data operations and CRUD workflows",
+            "Simulate mobile app user interaction patterns",
+            "Test error handling and recovery scenarios",
+            "Validate API rate limiting and performance under load",
+            "Simulate concurrent user sessions and data conflicts",
+            "Test API security and authorization boundaries",
+            "Validate real-time features and WebSocket connections"
+        ]
+        
+        session_counter = 0
         
         try:
             while self.running:
-                # Cleanup expired sessions periodically
+                # AI-driven session creation and execution
                 if self.agent:
-                    self.agent.cleanup_sessions()
+                    try:
+                        # Select a realistic scenario using AI-like selection
+                        import random
+                        scenario = random.choice(realistic_scenarios)
+                        
+                        # Create a new session with AI-generated goal
+                        session_id = await self.agent.start_session(goal=scenario)
+                        session_counter += 1
+                        
+                        logger.info(
+                            "AI-driven session created",
+                            session_id=session_id,
+                            scenario=scenario,
+                            session_number=session_counter,
+                            agent_id=id(self.agent),
+                            agent_worker_id=id(self.agent.agent_worker),
+                            total_sessions_in_worker=len(self.agent.agent_worker.sessions)
+                        )
+                        
+                        # Wait a moment for session to initialize
+                        await asyncio.sleep(2)
+                        
+                        # Execute the session with AI-driven prompt including target API details
+                        target_api_name = "test-api"
+                        available_endpoints = ["/admin/login", "/admin/dashboard/metrics", "/admin/users", "/admin/products"]
+                        
+                        ai_prompts = [
+                            f"""You are simulating a real user performing: {scenario}. 
+
+IMPORTANT: You MUST use the HTTP tools to make actual API requests. Here's the EXACT syntax:
+
+1. Use http_post tool for login: http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})
+2. Use http_get tool for data retrieval: http_get(api_name="{target_api_name}", path="/admin/dashboard/metrics")
+3. Use http_get tool for listing: http_get(api_name="{target_api_name}", path="/admin/users")
+4. Use http_post tool for creating: http_post(api_name="{target_api_name}", path="/admin/products", data={{"name": "test product"}})
+
+Target API: '{target_api_name}'
+Available endpoints: {available_endpoints}
+
+START NOW by calling: http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})""",
+
+                            f"""Begin testing the scenario: {scenario}. 
+
+YOU MUST MAKE ACTUAL HTTP REQUESTS using these tools with CORRECT parameters:
+- http_get(api_name="{target_api_name}", path="endpoint") - for GET requests
+- http_post(api_name="{target_api_name}", path="endpoint", data={{...}}) - for POST requests  
+- http_put(api_name="{target_api_name}", path="endpoint", data={{...}}) - for PUT requests
+- http_delete(api_name="{target_api_name}", path="endpoint") - for DELETE requests
+
+Target API: '{target_api_name}'
+Test these endpoints: {available_endpoints}
+
+STEP 1: Call http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})
+STEP 2: Call http_get(api_name="{target_api_name}", path="/admin/dashboard/metrics")
+STEP 3: Call http_get(api_name="{target_api_name}", path="/admin/users")
+
+Execute these steps NOW.""",
+
+                            f"""Simulate a user journey for: {scenario}. 
+
+CRITICAL: You have HTTP tools available - USE THEM to make real API calls with EXACT syntax:
+
+Example usage:
+- Login: http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})
+- Get metrics: http_get(api_name="{target_api_name}", path="/admin/dashboard/metrics") 
+- List users: http_get(api_name="{target_api_name}", path="/admin/users")
+- Create product: http_post(api_name="{target_api_name}", path="/admin/products", data={{"name": "Test Product", "price": 99.99}})
+
+Target: '{target_api_name}' API
+Endpoints: {available_endpoints}
+
+BEGIN by making this call RIGHT NOW: http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})""",
+
+                            f"""Execute realistic testing for: {scenario}. 
+
+YOU HAVE HTTP TOOLS - USE THEM! Make actual API requests with CORRECT syntax:
+
+1. FIRST: http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})
+2. THEN: http_get(api_name="{target_api_name}", path="/admin/dashboard/metrics")
+3. NEXT: http_get(api_name="{target_api_name}", path="/admin/users") 
+4. FINALLY: http_get(api_name="{target_api_name}", path="/admin/products")
+
+Target API: '{target_api_name}'
+Available endpoints: {available_endpoints}
+
+DO NOT just describe what you would do - ACTUALLY CALL THE TOOLS NOW!""",
+
+                            f"""Perform intelligent load testing for: {scenario}. 
+
+MANDATORY: Use the HTTP tools to make real requests. Available tools with CORRECT syntax:
+- http_get(api_name="{target_api_name}", path="endpoint") 
+- http_post(api_name="{target_api_name}", path="endpoint", data={{...}})
+- http_put(api_name="{target_api_name}", path="endpoint", data={{...}})
+- http_delete(api_name="{target_api_name}", path="endpoint")
+
+API: '{target_api_name}'
+Endpoints: {available_endpoints}
+
+EXECUTE THIS SEQUENCE:
+1. http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})
+2. http_get(api_name="{target_api_name}", path="/admin/dashboard/metrics")
+3. http_get(api_name="{target_api_name}", path="/admin/users")
+4. http_get(api_name="{target_api_name}", path="/admin/products")
+
+START MAKING THESE HTTP CALLS IMMEDIATELY."""
+                        ]
+                        
+                        ai_prompt = random.choice(ai_prompts)
+                        
+                        # Execute the AI-driven session
+                        try:
+                            # Debug: Check agent and session state before execution
+                            logger.info(
+                                "About to execute session",
+                                session_id=session_id,
+                                agent_id=id(self.agent),
+                                agent_worker_id=id(self.agent.agent_worker),
+                                total_sessions_in_worker=len(self.agent.agent_worker.sessions)
+                            )
+                            
+                            result = await self.agent.execute_goal(session_id, ai_prompt)
+                            
+                            logger.info(
+                                "AI-driven session executed",
+                                session_id=session_id,
+                                success=result.get("success", False),
+                                steps_completed=result.get("steps_completed", 0)
+                            )
+                            
+                        except Exception as exec_error:
+                            logger.error(
+                                "AI-driven session execution failed",
+                                session_id=session_id,
+                                error=str(exec_error),
+                                agent_id=id(self.agent),
+                                agent_worker_id=id(self.agent.agent_worker),
+                                total_sessions_in_worker=len(self.agent.agent_worker.sessions)
+                            )
+                    
+                    except Exception as session_error:
+                        logger.error(
+                            "AI-driven session creation failed", 
+                            error=str(session_error)
+                        )
+                    
+                    # Note: Removed cleanup_sessions() call here as it was interfering with active sessions
+                    # Cleanup will happen during shutdown instead
                 
-                # Wait before next cleanup cycle
-                await asyncio.sleep(60)  # Check every minute
+                # AI-driven timing - vary intervals to simulate realistic load patterns
+                base_interval = 30  # Base 30 seconds between sessions
+                variation = random.uniform(0.5, 2.0)  # 50% to 200% variation
+                sleep_time = base_interval * variation
+                
+                logger.info(
+                    "AI load testing cycle complete",
+                    next_session_in_seconds=int(sleep_time),
+                    total_sessions_created=session_counter
+                )
+                
+                await asyncio.sleep(sleep_time)
                 
         except asyncio.CancelledError:
-            logger.info("Service loop cancelled")
+            logger.info("AI-driven load testing cancelled")
         except Exception as e:
-            logger.error("Service loop error", error=str(e))
+            logger.error("AI-driven load testing error", error=str(e))
     
     async def stop(self):
         """Stop the agent service."""

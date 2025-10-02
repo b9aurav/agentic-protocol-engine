@@ -7,7 +7,7 @@
  * Auto-commit: test: add end-to-end distribution testing
  */
 
-import { spawn, exec } from 'child_process';
+import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs-extra';
 import * as path from 'path';

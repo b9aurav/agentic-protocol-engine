@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import { execSync, spawn } from 'child_process';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
 import chalk from 'chalk';
 import { generateScalingStrategy, generateGracefulShutdownConfig, ScalingConfig } from '../templates/docker-compose';
 
@@ -193,7 +192,7 @@ async function executeScaling(config: ScalingConfig, strategy: any, shutdownConf
   }
 }
 
-async function scaleUp(config: ScalingConfig, strategy: any): Promise<void> {
+async function scaleUp(config: ScalingConfig, _strategy: any): Promise<void> {
   console.log(chalk.blue('📈 Scaling up agents...'));
   
   // Use Docker Compose scale command with gradual rollout
@@ -219,7 +218,7 @@ async function scaleUp(config: ScalingConfig, strategy: any): Promise<void> {
   });
 }
 
-async function scaleDown(config: ScalingConfig, strategy: any, shutdownConfig: any): Promise<void> {
+async function scaleDown(config: ScalingConfig, _strategy: any, _shutdownConfig: any): Promise<void> {
   console.log(chalk.blue('📉 Scaling down agents...'));
   
   // Graceful scale down with proper shutdown

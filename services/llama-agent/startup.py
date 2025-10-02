@@ -164,9 +164,122 @@ class OptimizedAgentStartup:
             
             return web.Response(text='\n'.join(prometheus_metrics), content_type='text/plain')
         
+        async def start_session(request):
+            """Start a new agent session"""
+            try:
+                # Handle both JSON and form data
+                if request.content_type == 'application/json':
+                    data = await request.json()
+                else:
+                    # Try to parse as JSON from text
+                    text = await request.text()
+                    import json
+                    data = json.loads(text) if text else {}
+                goal = data.get('goal', 'Complete user journey')
+                
+                # Get the global agent instance with retry
+                from main import get_agent_instance
+                agent = get_agent_instance()
+                
+                # Wait for agent to be ready (up to 10 seconds)
+                import asyncio
+                for i in range(50):  # 50 * 0.2s = 10s max wait
+                    if agent:
+                        break
+                    await asyncio.sleep(0.2)
+                    agent = get_agent_instance()
+                
+                if agent:
+                    try:
+                        session_id = await agent.start_session(goal=goal)
+                        return web.json_response({
+                            "session_id": session_id, 
+                            "goal": goal, 
+                            "status": "started"
+                        })
+                    except Exception as start_error:
+                        return web.json_response(
+                            {"error": f"Start session failed: {str(start_error)}"}, 
+                            status=500
+                        )
+                else:
+                    return web.json_response(
+                        {"error": "Agent not ready yet, please try again"}, 
+                        status=503
+                    )
+            except Exception as e:
+                return web.json_response(
+                    {"error": f"Failed to start session: {str(e)}"}, 
+                    status=500
+                )
+        
+        async def execute_session(request):
+            """Execute a goal for a specific session"""
+            try:
+                session_id = request.match_info['session_id']
+                # Handle both JSON and form data
+                if request.content_type == 'application/json':
+                    data = await request.json()
+                else:
+                    # Try to parse as JSON from text
+                    text = await request.text()
+                    import json
+                    data = json.loads(text) if text else {}
+                prompt = data.get('prompt')
+                
+                # Get the global agent instance
+                from main import get_agent_instance
+                agent = get_agent_instance()
+                if agent:
+                    result = await agent.execute_goal(session_id, prompt)
+                    return web.json_response(result)
+                else:
+                    return web.json_response(
+                        {"error": "Agent not initialized"}, 
+                        status=500
+                    )
+            except ValueError as e:
+                return web.json_response({"error": str(e)}, status=404)
+            except Exception as e:
+                return web.json_response(
+                    {"error": f"Execution failed: {str(e)}"}, 
+                    status=500
+                )
+        
+        async def get_session_status(request):
+            """Get session information and status"""
+            try:
+                session_id = request.match_info['session_id']
+                
+                # Get the global agent instance
+                from main import get_agent_instance
+                agent = get_agent_instance()
+                if agent:
+                    session_info = agent.get_session_info(session_id)
+                    if session_info:
+                        return web.json_response(session_info)
+                    else:
+                        return web.json_response(
+                            {"error": "Session not found"}, 
+                            status=404
+                        )
+                else:
+                    return web.json_response(
+                        {"error": "Agent not initialized"}, 
+                        status=500
+                    )
+            except Exception as e:
+                return web.json_response(
+                    {"error": f"Failed to get session: {str(e)}"}, 
+                    status=500
+                )
+
         app = web.Application()
         app.router.add_get('/health', health_check)
         app.router.add_get('/metrics', metrics)
+        app.router.add_post('/sessions', start_session)
+        app.router.add_post('/sessions/{session_id}/execute', execute_session)
+        app.router.add_get('/sessions/{session_id}', get_session_status)
         
         runner = web.AppRunner(app)
         await runner.setup()

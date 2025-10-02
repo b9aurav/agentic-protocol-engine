@@ -24,13 +24,16 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Copy Python packages from builder stage
-COPY --from=builder /root/.local /root/.local
-
 # Create non-root user for security
 RUN groupadd -r cerebras && useradd -r -g cerebras -u 1002 cerebras \
-    && mkdir -p /app/logs /app/tmp \
-    && chown -R cerebras:cerebras /app
+    && mkdir -p /app/logs /app/tmp /home/cerebras/.local \
+    && chown -R cerebras:cerebras /app /home/cerebras
+
+# Copy Python packages from builder stage to user directory
+COPY --from=builder --chown=cerebras:cerebras /root/.local /home/cerebras/.local
+
+# Ensure executable permissions on installed binaries
+RUN chmod +x /home/cerebras/.local/bin/*
 
 # Copy source code
 COPY --chown=cerebras:cerebras src/ ./src/
@@ -43,12 +46,9 @@ USER cerebras
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH=/root/.local/bin:$PATH \
+    PATH=/home/cerebras/.local/bin:$PATH \
     # Memory optimization
     MALLOC_ARENA_MAX=2 \
-    # Uvicorn optimization
-    UVICORN_WORKERS=1 \
-    UVICORN_WORKER_CLASS=uvicorn.workers.UvicornWorker \
     # Resource monitoring
     METRICS_ENABLED=true \
     METRICS_PORT=8002
@@ -62,5 +62,4 @@ EXPOSE 8000 8002
 
 # Use exec form with optimized uvicorn settings for better performance
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--workers", "1", "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--access-log", "--log-level", "info", "--no-server-header"]
+     "--access-log", "--log-level", "info"]

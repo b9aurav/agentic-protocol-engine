@@ -207,7 +207,7 @@ groups:
   - name: ape_performance_alerts
     orgId: 1
     folder: APE Performance
-    interval: 15s
+    interval: 10s
     rules:
       - uid: ape_gateway_latency
         title: High Gateway Latency

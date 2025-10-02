@@ -138,12 +138,12 @@ export function generateApplicationSpecificConfig(
     const routeConfig: RouteConfig = {
         name: `${template.name} - ${config.projectName}`,
         description: template.description,
-        baseUrl: config.targetUrl,
+        base_url: config.targetUrl,
         timeout: getApplicationTimeout(applicationType),
-        retryPolicy: getApplicationRetryPolicy(applicationType),
+        retry_policy: getApplicationRetryPolicy(applicationType),
         auth: generateApplicationAuth(config, template),
         endpoints: endpoints,
-        healthCheck: {
+        health_check: {
             enabled: true,
             path: template.healthCheckPath,
             interval: 30000
@@ -171,12 +171,12 @@ export function generateApplicationSpecificConfig(
             cerebras_api: {
                 name: 'Cerebras Inference API',
                 description: 'High-speed LLM inference via Cerebras proxy',
-                baseUrl: 'http://cerebras_proxy:8000',
+                base_url: 'http://cerebras_proxy:8000',
                 timeout: 10000,
-                retryPolicy: {
-                    maxRetries: 2,
-                    backoffFactor: 1.2,
-                    retryOn: [502, 503, 504, 408]
+                retry_policy: {
+                    max_retries: 2,
+                    backoff_factor: 1.2,
+                    retry_on: [502, 503, 504, 408]
                 },
                 endpoints: [
                     {
@@ -191,7 +191,7 @@ export function generateApplicationSpecificConfig(
                         description: 'Health check endpoint'
                     }
                 ],
-                healthCheck: {
+                health_check: {
                     enabled: true,
                     path: '/health',
                     interval: 15000
@@ -317,26 +317,26 @@ function getApplicationTimeout(applicationType: ApplicationType): number {
 }
 
 // Get application-specific retry policies
-function getApplicationRetryPolicy(applicationType: ApplicationType): RouteConfig['retryPolicy'] {
+function getApplicationRetryPolicy(applicationType: ApplicationType): RouteConfig['retry_policy'] {
     switch (applicationType) {
         case 'graphql':
             return {
-                maxRetries: 2, // GraphQL errors are often query-related, fewer retries
-                backoffFactor: 1.5,
-                retryOn: [502, 503, 504, 408]
+                max_retries: 2, // GraphQL errors are often query-related, fewer retries
+                backoff_factor: 1.5,
+                retry_on: [502, 503, 504, 408]
             };
         case 'microservices':
             return {
-                maxRetries: 4, // Microservices may have transient failures
-                backoffFactor: 2.0,
-                retryOn: [502, 503, 504, 408, 429]
+                max_retries: 4, // Microservices may have transient failures
+                backoff_factor: 2.0,
+                retry_on: [502, 503, 504, 408, 429]
             };
 
         default:
             return {
-                maxRetries: 3,
-                backoffFactor: 1.5,
-                retryOn: [502, 503, 504, 408, 429]
+                max_retries: 3,
+                backoff_factor: 1.5,
+                retry_on: [502, 503, 504, 408, 429]
             };
     }
 }
@@ -385,7 +385,7 @@ function generateApplicationAuth(config: SetupAnswers, template: ApplicationTemp
                 }
             };
 
-        case 'basic':
+        case 'basic': {
             if (!config.authUsername || !config.authPassword) {
                 throw new Error('Username and password are required for basic authentication');
             }
@@ -400,6 +400,7 @@ function generateApplicationAuth(config: SetupAnswers, template: ApplicationTemp
                     password: config.authPassword
                 }
             };
+        }
 
         case 'session':
             return {

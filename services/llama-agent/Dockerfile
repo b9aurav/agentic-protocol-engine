@@ -24,13 +24,16 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Copy Python packages from builder stage
-COPY --from=builder /root/.local /root/.local
-
 # Create non-root user for security and resource isolation
 RUN groupadd -r agent && useradd -r -g agent -u 1001 agent \
-    && mkdir -p /app/logs /app/tmp \
-    && chown -R agent:agent /app
+    && mkdir -p /app/logs /app/tmp /home/agent/.local \
+    && chown -R agent:agent /app /home/agent
+
+# Copy Python packages from builder stage to user directory
+COPY --from=builder --chown=agent:agent /root/.local /home/agent/.local
+
+# Ensure executable permissions on installed binaries
+RUN chmod +x /home/agent/.local/bin/*
 
 # Copy application code
 COPY --chown=agent:agent . .
@@ -42,7 +45,7 @@ USER agent
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH=/root/.local/bin:$PATH \
+    PATH=/home/agent/.local/bin:$PATH \
     # Memory optimization
     MALLOC_ARENA_MAX=2 \
     # Agent-specific optimizations

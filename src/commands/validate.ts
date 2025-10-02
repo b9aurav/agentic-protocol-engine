@@ -150,7 +150,7 @@ async function validateMCPConfigFile(mcpConfigPath: string): Promise<ConfigValid
   }
 }
 
-async function autoValidateCurrentDirectory(options: ValidateOptions): Promise<void> {
+async function autoValidateCurrentDirectory(_options: ValidateOptions): Promise<void> {
   const currentDir = process.cwd();
   
   // Check for common APE configuration files

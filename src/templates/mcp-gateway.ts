@@ -33,12 +33,12 @@ export interface MCPGatewayConfig {
 export interface RouteConfig {
   name: string;
   description: string;
-  baseUrl: string;
+  base_url: string;
   timeout: number;
-  retryPolicy: {
-    maxRetries: number;
-    backoffFactor: number;
-    retryOn: number[];
+  retry_policy: {
+    max_retries: number;
+    backoff_factor: number;
+    retry_on: number[];
   };
   auth?: {
     type: string;
@@ -50,7 +50,7 @@ export interface RouteConfig {
     };
   };
   endpoints: EndpointConfig[];
-  healthCheck?: {
+  health_check?: {
     enabled: boolean;
     path: string;
     interval: number;
@@ -149,16 +149,16 @@ export function generateMCPGatewayConfig(config: SetupAnswers): MCPGatewayConfig
       sut_api: {
         name: 'System Under Test API',
         description: `Target application API at ${config.targetUrl}`,
-        baseUrl: config.targetUrl,
+        base_url: config.targetUrl,
         timeout: 30000, // 30 seconds
-        retryPolicy: {
-          maxRetries: 3,
-          backoffFactor: 1.5,
-          retryOn: [502, 503, 504, 408, 429] // Retry on server errors and timeouts
+        retry_policy: {
+          max_retries: 3,
+          backoff_factor: 1.5,
+          retry_on: [502, 503, 504, 408, 429] // Retry on server errors and timeouts
         },
         auth: authConfig,
         endpoints: endpoints,
-        healthCheck: {
+        health_check: {
           enabled: true,
           path: '/health',
           interval: 30000 // 30 seconds
@@ -168,12 +168,12 @@ export function generateMCPGatewayConfig(config: SetupAnswers): MCPGatewayConfig
       cerebras_api: {
         name: 'Cerebras Inference API',
         description: 'High-speed LLM inference via Cerebras proxy',
-        baseUrl: 'http://cerebras_proxy:8000',
+        base_url: 'http://cerebras_proxy:8000',
         timeout: 10000, // 10 seconds for fast inference
-        retryPolicy: {
-          maxRetries: 2,
-          backoffFactor: 1.2,
-          retryOn: [502, 503, 504, 408] // Don't retry on rate limits (429)
+        retry_policy: {
+          max_retries: 2,
+          backoff_factor: 1.2,
+          retry_on: [502, 503, 504, 408] // Don't retry on rate limits (429)
         },
         endpoints: [
           {
@@ -196,7 +196,7 @@ export function generateMCPGatewayConfig(config: SetupAnswers): MCPGatewayConfig
             description: 'Prometheus metrics endpoint'
           }
         ],
-        healthCheck: {
+        health_check: {
           enabled: true,
           path: '/health',
           interval: 15000 // 15 seconds

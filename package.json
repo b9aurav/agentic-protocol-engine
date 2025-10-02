@@ -5,8 +5,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "ape-test": "dist/cli.js",
-    "create-ape-test": "dist/create.js"
+    "ape-load": "dist/cli.js",
+    "create-ape-load": "dist/create.js"
   },
   "files": [
     "dist/**/*",
@@ -25,10 +25,11 @@
     "start": "node dist/cli.js",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
-    "test": "jest --run",
+    "test": "jest",
     "test:watch": "jest --watch",
     "test:ci": "jest --ci --coverage --watchAll=false",
-
+    "test:package": "node scripts/test-package.js",
+    "test:package:keep": "node scripts/test-package.js --skip-cleanup",
     "test:e2e": "jest --testPathPattern=e2e-distribution.test.ts",
     "clean": "rimraf dist",
     "prepublishOnly": "npm run lint && npm run test:ci && npm run build",
@@ -81,5 +82,9 @@
   "bugs": {
     "url": "https://github.com/b9aurav/agentic-protocol-engine/issues"
   },
-  "homepage": "https://github.com/b9aurav/agentic-protocol-engine#readme"
+  "homepage": "https://github.com/b9aurav/agentic-protocol-engine#readme",
+  "directories": {
+    "doc": "docs",
+    "example": "examples"
+  }
 }
