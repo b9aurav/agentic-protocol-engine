@@ -1,5 +1,5 @@
 """
-Cerebras Proxy Service - OpenAI-compatible API proxy for Cerebras Llama 4 Scout
+Cerebras Proxy Service - AI-compatible API proxy for Cerebras llama3.1-8b
 """
 
 import os
@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title="Cerebras Proxy",
-    description="OpenAI-compatible API proxy for Cerebras Llama 4 Scout",
+    description="OpenAI-compatible API proxy for Cerebras llama3.1-8b",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -128,8 +128,8 @@ async def chat_completions(
     api_key: str = Depends(verify_api_key)
 ):
     """
-    OpenAI-compatible chat completions endpoint
-    Forwards requests to Cerebras Llama 4 Scout API with performance tracking
+    AI-compatible chat completions endpoint
+    Forwards requests to Cerebras llama3.1-8b API with performance tracking
     """
     request_start_time = time.time()
     
@@ -209,7 +209,7 @@ async def chat_completions(
             model=request.model or "llama3.1-8b"
         )
         
-        # Convert Cerebras response to OpenAI format
+        # Convert Cerebras response to format
         choices = []
         for choice in cerebras_response.get("choices", []):
             choices.append(ChatCompletionChoice(

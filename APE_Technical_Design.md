@@ -6,7 +6,7 @@
 
 The proliferation of microservices and complex cloud applications necessitates a paradigm shift in performance validation. Traditional load testing methods, which rely on predefined, stateless scripts (e.g., repeating simple HTTP requests), fail fundamentally to replicate the non-linear, adaptive behavior of human users across multi-step transactions. This shortcoming leads to unreliable capacity planning and systemic failures when applications encounter realistic, stateful user journeys.
 
-The proposed open-source tool, the Agentic Protocol Engine (APE), addresses this critical gap. APE is designed for easy distribution and use via a Node.js-based CLI, allowing developers to install and run it with a simple `npx` command. The system deploys a farm of scalable, containerized Large Language Model (LLM) agents, powered by high-speed inference endpoints like Cerebras Llama 4 Scout. These agents execute dynamic, stateful decision-making in real-time. The project leverages the Model Context Protocol (MCP) Gateway to standardize interaction between the Llama Agents and the Cloud Application Under Test (SUT).1 The key innovation lies in the synergistic coupling of accelerated inference speed with the standardization afforded by the Docker MCP Gateway, enabling an unprecedented scale of
+The proposed open-source tool, the Agentic Protocol Engine (APE), addresses this critical gap. APE is designed for easy distribution and use via a Node.js-based CLI, allowing developers to install and run it with a simple `npx` command. The system deploys a farm of scalable, containerized Large Language Model (LLM) agents, powered by high-speed inference endpoints like Cerebras llama3.1-8b. These agents execute dynamic, stateful decision-making in real-time. The project leverages the Model Context Protocol (MCP) Gateway to standardize interaction between the Llama Agents and the Cloud Application Under Test (SUT).1 The key innovation lies in the synergistic coupling of accelerated inference speed with the standardization afforded by the Docker MCP Gateway, enabling an unprecedented scale of
 
 *intelligent* traffic generation necessary for rigorous system validation.
 
@@ -16,7 +16,7 @@ The proposed open-source tool, the Agentic Protocol Engine (APE), addresses this
 
 The primary objective of the MVP is to move beyond the limitations of simple request repetition toward simulating complex, multi-stage human interaction sequences. An example of such complexity is a multi-step login sequence: remote logon via VPN, authentication via a jump server, attempted logon to an application server with an incorrect password, followed by a correct logon, file manipulation, and eventual logoff.3 Traditional load generators cannot reliably handle dynamic responses or adjust subsequent actions based on prior application feedback.
 
-The requirement for stateful behavior inherently shifts the performance bottleneck from standard Input/Output (I/O) throughput to **cognitive latency**. In a stateful simulation, Agent Action A (e.g., attempting a login) must be immediately followed by Agent Decision B (e.g., deciding the next path based on the application's HTTP response code and payload). Decision B requires a near real-time inference call to the LLM (Cerebras Llama 4 Scout). If this inference latency is high, the total simulated time between user actions (Mean Time Between Actions, MTBA) extends unrealistically, invalidating the simulation’s realism. Therefore, the ability of the Llama Agent to maintain session context and adapt its next action dynamically, using tools and feeding the response back into its context window, produces a far more realistic and insightful load profile than static scripts.
+The requirement for stateful behavior inherently shifts the performance bottleneck from standard Input/Output (I/O) throughput to **cognitive latency**. In a stateful simulation, Agent Action A (e.g., attempting a login) must be immediately followed by Agent Decision B (e.g., deciding the next path based on the application's HTTP response code and payload). Decision B requires a near real-time inference call to the LLM (Cerebras llama3.1-8b). If this inference latency is high, the total simulated time between user actions (Mean Time Between Actions, MTBA) extends unrealistically, invalidating the simulation’s realism. Therefore, the ability of the Llama Agent to maintain session context and adapt its next action dynamically, using tools and feeding the response back into its context window, produces a far more realistic and insightful load profile than static scripts.
 
 If an agent encounters an error, such as a 401 Unauthorized response during the login attempt, a traditional script either fails or retries blindly. A Llama Agent, however, can dynamically decide to log the specific failure with context, attempt an alternate sequence (e.g., registration), or query a tool for help before proceeding, thereby producing a richer, more accurate stress test that mimics sophisticated attack or usage patterns.3
 
@@ -26,7 +26,7 @@ The requirement for rapid, stateful decision-making necessitates a highly respon
 
 Cerebras operates based on the principle that "faster inference speed results in higher model intelligence".4 By significantly accelerating inference speed, the Llama Agent gains the necessary time within the real-time latency budget to utilize a greater number of tokens for complex reasoning, thereby enhancing the sophistication of its simulated behavior. The WSE architecture is particularly well-suited for accelerating LLM training and inference, utilizing 850,000 cores, 40 GB of uniformly distributed on-chip memory, and a 20 PB/s high-bandwidth memory fabric designed to overcome the memory-wall associated with traditionally memory-bound compute tasks.5
 
-This hardware design provides crucial architectural benefits for the MVP. Cerebras Inference achieves up to a **30x faster inference rate** and superior price-performance compared to typical GPU clouds.2 This speed advantage is not merely a budget optimization; it functions as a critical enabler for scaling the number of concurrent, intelligent agents. For the MVP, this speed allows the Cerebras endpoint to function as a shared, highly centralized resource capable of serving hundreds, or potentially thousands, of simultaneously containerized Llama Agents without succumbing to the high context-switching latency typical of heavily loaded GPU clusters. The Cerebras Llama 4 Scout, compatible with standard APIs like the OpenAI Chat Completions API 6, can be seamlessly integrated using LlamaIndex wrappers, bypassing complex, highly customized API handling at the individual agent level.
+This hardware design provides crucial architectural benefits for the MVP. Cerebras Inference achieves up to a **30x faster inference rate** and superior price-performance compared to typical GPU clouds.2 This speed advantage is not merely a budget optimization; it functions as a critical enabler for scaling the number of concurrent, intelligent agents. For the MVP, this speed allows the Cerebras endpoint to function as a shared, highly centralized resource capable of serving hundreds, or potentially thousands, of simultaneously containerized Llama Agents without succumbing to the high context-switching latency typical of heavily loaded GPU clusters. The Cerebras llama3.1-8b, compatible with standard APIs like the AI Chat Completions API 6, can be seamlessly integrated using LlamaIndex wrappers, bypassing complex, highly customized API handling at the individual agent level.
 
 ## **III. Architectural Blueprint: The Containerized Simulation Grid**
 
@@ -38,7 +38,7 @@ The system is defined by its operational tiers, designed for modularity and spec
 
 1. **Agent Layer:** Composed of containerized Llama Agent instances. These stateless containers handle the execution of user goals, maintaining temporary session state (JWTs, context) within the running process memory, and coordinating tool calls.  
 2. **Protocol Mediation Layer:** The Docker Model Context Protocol (MCP) Gateway. This critical central component standardizes the communication format between the complex LLM Agents and the external HTTP services (both the SUT and the Cerebras endpoint).  
-3. **Target Layer:** This encompasses the Cloud Application (System Under Test, SUT) and the Cerebras Llama 4 Scout Inference Engine, which provides the cognitive power.
+3. **Target Layer:** This encompasses the Cloud Application (System Under Test, SUT) and the Cerebras llama3.1-8b Inference Engine, which provides the cognitive power.
 
 The interaction protocols and performance expectations for these components are summarized below:
 
@@ -46,7 +46,7 @@ Table I: Core Component Mapping and Interconnection Protocol
 
 | Component | Primary Function | Technology Link | Critical Performance Metric |
 | :---- | :---- | :---- | :---- |
-| Cerebras Llama 4 Scout | High-Speed Inference (Agent Decisioning) | Wafer Scale Engine (WSE) / Low Latency | Token Generation Rate (T/s) |
+| Cerebras llama3.1-8b | High-Speed Inference (Agent Decisioning) | Wafer Scale Engine (WSE) / Low Latency | Token Generation Rate (T/s) |
 | Containerized Llama Agents | Stateful User Behavior Simulation | LlamaIndex/Docker | Stateful Session Completion Rate |
 | Docker MCP Gateway | Protocol Translation & Request Routing | HTTP/JSON Schema | API Call Latency (Agent-to-Target) |
 | Target Cloud Application (SUT) | System Under Test | HTTP/S | Application Response Time (ART) |
@@ -124,7 +124,7 @@ A user will initiate a new test setup by running a command like `npx create-ape-
 
 The generated `ape.docker-compose.yml` file will define all necessary services for the simulation grid:
 
-1. **cerebras\_proxy**: An internal service endpoint configured to communicate with the actual Cerebras Llama 4 Scout inference system (or a mock API for local testing).  
+1. **cerebras\_proxy**: An internal service endpoint configured to communicate with the actual Cerebras llama3.1-8b inference system (or a mock API for local testing).  
 2. **mcp\_gateway**: The Docker MCP Gateway container, acting as the central traffic broker.  
 3. **sut\_target**: A simplified container representing the Target Cloud Application Under Test (SUT).  
 4. **llama\_agent**: The core service, built from the Llama Agent logic image, configured for horizontal scaling.  
@@ -194,7 +194,7 @@ Specific agent deployment recommendations:
 * **Logging:** Deploying Promtail configured to capture logs via the configured Docker logging driver and forward them to Loki.  
 * **Metrics:** Deploying cAdvisor and Node Exporter to gather infrastructure and container-specific resource utilization data (CPU, memory, container count) and expose it to Prometheus.12
 
-This lightweight strategy ensures that the essential visibility into the simulation layer (Agents and MCP Gateway) is prioritized. The primary goal is to prove the realism and scalability of the *generated traffic*, making the observability of the agent behavior more crucial than the deep introspection of the SUT itself. This centralized platform enables quick debugging and validation of the low MTBA metric, confirming that the Cerebras Llama 4 Scout is effectively mitigating cognitive latency and delivering realistic simulation speeds.
+This lightweight strategy ensures that the essential visibility into the simulation layer (Agents and MCP Gateway) is prioritized. The primary goal is to prove the realism and scalability of the *generated traffic*, making the observability of the agent behavior more crucial than the deep introspection of the SUT itself. This centralized platform enables quick debugging and validation of the low MTBA metric, confirming that the Cerebras llama3.1-8b is effectively mitigating cognitive latency and delivering realistic simulation speeds.
 
 ## **VII. Conclusion and Future Roadmap**
 
@@ -213,7 +213,7 @@ While the initial open-source release will be powerful, transitioning to a more 
 
 * **Migration to Kubernetes (K8s):** The system must migrate from simple Docker Compose scaling 11 to a Kubernetes cluster. K8s provides true elastic scale, advanced self-healing, resilience, and superior resource management capabilities necessary for sustained, high-volume load testing.  
 * **Advanced APM and Distributed Tracing Integration:** The current simplified tracing must be upgraded to integrate with full Application Performance Monitoring (APM) tools and modern distributed tracing platforms (e.g., Jaeger/OpenTelemetry). This provides deeper, end-to-end introspection into the SUT’s internal processing paths, complementing the surface-level metrics collected by the MCP Gateway.12  
-* **LLM Fine-Tuning and Adversarial Modeling:** To maximize simulation realism, the Llama Agent instructions or the underlying Llama 4 Scout model should be continuously refined. This includes fine-tuning the model to handle a wider array of application error responses, complex redirection logic, and non-deterministic state changes, thereby maximizing the intelligence and fidelity of the simulated traffic patterns.
+* **LLM Fine-Tuning and Adversarial Modeling:** To maximize simulation realism, the Llama Agent instructions or the underlying llama3.1-8b model should be continuously refined. This includes fine-tuning the model to handle a wider array of application error responses, complex redirection logic, and non-deterministic state changes, thereby maximizing the intelligence and fidelity of the simulated traffic patterns.
 
 #### **Works cited**
 

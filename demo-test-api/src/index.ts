@@ -15,7 +15,7 @@ import {
 } from './middleware/errorSimulation';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Security middleware
 app.use(helmet());
@@ -119,8 +119,8 @@ app.use(errorHandler);
 seedData();
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`Demo Test API server running on port ${PORT}`);
+app.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`Demo Test API server running on http://0.0.0.0:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 

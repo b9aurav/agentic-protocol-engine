@@ -46,7 +46,7 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
         ports: [`${getAvailablePort(config.targetPort, 13000)}:3000`, '13001:8001'], // Main port and metrics port
         environment: {
           NODE_ENV: 'production',
-          LOG_LEVEL: 'info',
+          LOG_LEVEL: 'debug',
           CONFIG_PATH: '/app/config/mcp-gateway.json',
           PROJECT_NAME: config.projectName,
           TARGET_URL: config.targetUrl,
@@ -123,7 +123,7 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           METRICS_PORT: '8002',
           MAX_CONCURRENT_REQUESTS: `${config.agentCount * 2}`, // Allow 2x agent count for burst
           TTFT_TARGET_MS: '500', // Target Time-to-First-Token in milliseconds
-          REQUEST_TIMEOUT: '10000', // 10 second timeout for inference
+          REQUEST_TIMEOUT: '10', // 10 second timeout for inference
           RATE_LIMIT_PER_MINUTE: `${config.agentCount * 60}`, // 60 requests per agent per minute
           // High-performance optimization
           CONNECTION_POOL_SIZE: Math.min(50, config.agentCount),
@@ -180,7 +180,7 @@ export function generateDockerCompose(config: SetupAnswers): DockerComposeConfig
           dockerfile: 'Dockerfile'
         },
         // Use expose instead of ports to avoid conflicts when scaling
-        expose: ['8000'], // Expose metrics port for Prometheus scraping (internal only)
+        expose: ['8000'],
         environment: {
           MCP_GATEWAY_URL: 'http://mcp_gateway:3000',
           CEREBRAS_PROXY_URL: 'http://cerebras_proxy:8000',

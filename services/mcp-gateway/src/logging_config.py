@@ -54,17 +54,17 @@ def setup_logging(config: LoggingConfig):
                 "propagate": False
             },
             "uvicorn": {
-                "level": "INFO",
+                "level": config.level.upper(),
                 "handlers": ["console"],
                 "propagate": False
             },
             "uvicorn.access": {
-                "level": "INFO",
+                "level": config.level.upper(),
                 "handlers": ["console"],
                 "propagate": False
             },
             "httpx": {
-                "level": "WARNING",  # Reduce noise from HTTP client
+                "level": config.level.upper(),
                 "handlers": ["console"],
                 "propagate": False
             }

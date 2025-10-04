@@ -4,6 +4,9 @@ Implements Requirements 3.1, 3.2, 3.3 for standardized protocol mediation.
 """
 
 import json
+import asyncio
+from fastapi.responses import JSONResponse
+from .models import MCPRequest
 import logging
 import os
 import time
@@ -21,6 +24,8 @@ from .router import RequestRouter
 from .logging_config import setup_logging
 from .metrics import setup_metrics, track_request_metrics
 
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 # Global router instance
 router: RequestRouter = None
@@ -44,7 +49,7 @@ async def lifespan(app: FastAPI):
     router = RequestRouter(config.routes)
     
     logger = logging.getLogger(__name__)
-    logger.info(f"MCP Gateway started with {len(config.routes)} routes")
+    logger.info(f"MCP Gateway started with {len(config.routes)} routes.")
     
     yield
     
@@ -71,6 +76,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    logger = logging.getLogger(__name__)
+    logger.error(f"Validation error: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+    )
+
 
 def load_gateway_config() -> GatewayConfig:
     """
@@ -92,72 +106,77 @@ def load_gateway_config() -> GatewayConfig:
         raise
 
 
+# Manually import necessary components for the middleware workaround
+from fastapi.responses import JSONResponse
+from .models import MCPRequest
+
 @app.middleware("http")
 async def add_trace_id_middleware(request: Request, call_next):
     """
-    Middleware to add trace ID to all requests and provide comprehensive logging.
-    Requirement 4.2: Trace ID injection and propagation.
-    Requirement 8.2: Structured logging for all requests and responses.
+    Middleware to add trace ID, provide comprehensive logging, and apply a
+    workaround for a suspected bug in FastAPI's internal processing for /mcp/request.
     """
-    # Get or generate trace ID
     trace_id = request.headers.get("X-Trace-ID") or str(uuid.uuid4())
-    
-    # Add trace ID to request state
     request.state.trace_id = trace_id
-    
-    # Log incoming request
     logger = logging.getLogger(__name__)
-    
-    # Read request body for logging (if present and reasonable size)
-    request_body = None
-    if request.method in ["POST", "PUT", "PATCH"]:
-        try:
-            body = await request.body()
-            if len(body) < 10000:  # Only log bodies smaller than 10KB
-                request_body = body.decode('utf-8') if body else None
-        except Exception:
-            request_body = "<unable to read body>"
-    
-    logger.info(
-        f"Incoming request: {request.method} {request.url.path}",
-        extra={
-            "request_trace_id": trace_id,
-            "http_method": request.method,
-            "request_path": request.url.path,
-            "query_params": str(request.query_params) if request.query_params else None,
-            "remote_addr": request.client.host if request.client else None,
-            "user_agent": request.headers.get("User-Agent"),
-            "request_headers": dict(request.headers),
-            "request_body": request_body,
-            "event_type": "request_start"
-        }
-    )
-    
-    # Process request
     start_time = time.time()
+
+    # Log initial incoming request details
+    log_extra = {
+        "request_trace_id": trace_id,
+        "http_method": request.method,
+        "request_path": request.url.path,
+        "remote_addr": request.client.host if request.client else None,
+    }
+    logger.info(f"Incoming request: {request.method} {request.url.path}", extra=log_extra)
+
+    # WORKAROUND: For /mcp/request, bypass call_next and call the handler directly
+    # This avoids a suspected silent hang in FastAPI's internal request processing.
+    if request.method == "POST" and request.url.path == "/mcp/request":
+        response = None
+        try:
+            json_body = await request.json()
+            mcp_request = MCPRequest.model_validate(json_body)
+            
+            # Directly call the endpoint logic
+            mcp_response = await handle_mcp_request(mcp_request)
+            
+            # Manually construct the JSONResponse that FastAPI would have made
+            response = JSONResponse(
+                content=mcp_response.model_dump(),
+                status_code=mcp_response.status_code
+            )
+
+        except Exception as e:
+            logger.error(f"Error in middleware workaround for /mcp/request: {str(e)}", extra=log_extra, exc_info=True)
+            response = JSONResponse(
+                status_code=500,
+                content={"error": "Internal server error during middleware workaround", "trace_id": trace_id}
+            )
+        
+        # Apply standard headers and logging to the manually created response
+        execution_time = time.time() - start_time
+        response.headers["X-Trace-ID"] = trace_id
+        response.headers["X-Execution-Time"] = str(execution_time)
+        response.headers["X-Gateway-Version"] = "1.0.0"
+
+        log_extra["response_status"] = response.status_code
+        log_extra["response_time"] = execution_time
+        logger.info(f"Response sent (via workaround): {request.method} {request.url.path}", extra=log_extra)
+        return response
+
+    # Original flow for all other endpoints
     response = await call_next(request)
     execution_time = time.time() - start_time
-    
-    # Add trace ID and other headers to response
+
     response.headers["X-Trace-ID"] = trace_id
     response.headers["X-Execution-Time"] = str(execution_time)
     response.headers["X-Gateway-Version"] = "1.0.0"
-    
-    # Log response
-    logger.info(
-        f"Response sent: {request.method} {request.url.path}",
-        extra={
-            "request_trace_id": trace_id,
-            "http_method": request.method,
-            "request_path": request.url.path,
-            "response_status": response.status_code,
-            "response_time": execution_time,
-            "response_headers": dict(response.headers),
-            "remote_addr": request.client.host if request.client else None,
-            "event_type": "request_complete"
-        }
-    )
-    
+
+    log_extra["response_status"] = response.status_code
+    log_extra["response_time"] = execution_time
+    logger.info(f"Response sent: {request.method} {request.url.path}", extra=log_extra)
+
     return response
 
 
@@ -170,12 +189,15 @@ async def handle_mcp_request(request: MCPRequest) -> MCPResponse:
     Requirement 3.2: Request validation using Pydantic schemas.
     Requirement 3.3: Enforce MCP-compliant JSON output.
     """
+    logger = logging.getLogger(__name__)
+    logger.info(f"TRACE: handle_mcp_request called for {request.api_name} {request.method.value} {request.path}")    
     if not router:
         raise HTTPException(status_code=503, detail="Gateway not initialized")
     
     try:
         # Track metrics
         with track_request_metrics(request.api_name, request.method.value):
+    
             response = await router.route_request(request)
         
         return response
@@ -184,7 +206,6 @@ async def handle_mcp_request(request: MCPRequest) -> MCPResponse:
         raise
     except Exception as e:
         logger = logging.getLogger(__name__)
-        logger.error(f"Unexpected error handling MCP request: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

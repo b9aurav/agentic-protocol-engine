@@ -64,3 +64,4 @@ ape.docker-compose.yml
 ape.mcp-gateway.json
 test-results/
 *.tgz
+demo-test-api/ape-test/*

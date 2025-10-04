@@ -47,7 +47,6 @@ class RequestRouter:
         # Validate route exists
         if request.api_name not in self.routes:
             execution_time = time.time() - start_time
-            logger.error(f"Route not found: {request.api_name}", extra={"trace_id": trace_id})
             raise HTTPException(
                 status_code=404,
                 detail=f"Route '{request.api_name}' not found"
@@ -82,18 +81,6 @@ class RequestRouter:
             
             logger.info(
                 f"Request routed successfully: {request.method} {target_url}",
-                extra={
-                    "trace_id": trace_id,
-                    "status_code": response.status_code,
-                    "execution_time": execution_time,
-                    "api_name": request.api_name,
-                    "method": request.method.value,
-                    "path": request.path,
-                    "target_url": target_url,
-                    "response_size": len(response.content) if response.content else 0,
-                    "request_headers": dict(headers),
-                    "response_headers": dict(response.headers)
-                }
             )
             
             return MCPResponse(
@@ -109,17 +96,7 @@ class RequestRouter:
             error_msg = f"Request failed: {str(e)}"
             
             logger.error(
-                error_msg,
-                extra={
-                    "trace_id": trace_id,
-                    "api_name": request.api_name,
-                    "method": request.method.value,
-                    "path": request.path,
-                    "target_url": target_url,
-                    "execution_time": execution_time,
-                    "error_type": type(e).__name__,
-                    "request_headers": dict(headers)
-                }
+                error_msg
             )
             
             raise HTTPException(
@@ -191,9 +168,9 @@ class RequestRouter:
                 logger.info(
                     f"Executing request attempt {attempt + 1}",
                     extra={
-                        "trace_id": trace_id,
-                        "method": method,
                         "url": url,
+                        "headers": headers,
+                        "json": json,
                         "attempt": attempt + 1,
                         "max_retries": retry_policy.max_retries + 1
                     }
@@ -211,8 +188,6 @@ class RequestRouter:
                 logger.info(
                     f"Received response: {response.status_code}",
                     extra={
-                        "trace_id": trace_id,
-                        "status_code": response.status_code,
                         "response_headers": dict(response.headers),
                         "attempt": attempt + 1
                     }
@@ -227,14 +202,6 @@ class RequestRouter:
                     
                     logger.warning(
                         f"Request failed with status {response.status_code}, retrying in {wait_time}s",
-                        extra={
-                            "trace_id": trace_id,
-                            "status_code": response.status_code,
-                            "attempt": attempt + 1,
-                            "max_retries": retry_policy.max_retries,
-                            "wait_time": wait_time,
-                            "retry_reason": "status_code_retry"
-                        }
                     )
                     await asyncio.sleep(wait_time)
                     continue
@@ -254,29 +221,14 @@ class RequestRouter:
                     record_retry_attempt(headers.get("X-API-Name", "unknown"), attempt + 1)
                     
                     logger.warning(
-                        f"Request failed with error: {str(e)}, retrying in {wait_time}s",
-                        extra={
-                            "trace_id": trace_id,
-                            "error_type": type(e).__name__,
-                            "error_message": str(e),
-                            "attempt": attempt + 1,
-                            "max_retries": retry_policy.max_retries,
-                            "wait_time": wait_time,
-                            "retry_reason": "request_error"
-                        }
+                        f"Request failed with error: {str(e)}, retrying in {wait_time}s"
                     )
                     await asyncio.sleep(wait_time)
                     continue
                 
                 # Final attempt failed, log and raise
                 logger.error(
-                    f"All retry attempts failed: {str(e)}",
-                    extra={
-                        "trace_id": trace_id,
-                        "error_type": type(e).__name__,
-                        "error_message": str(e),
-                        "total_attempts": attempt + 1
-                    }
+                    f"All retry attempts failed: {str(e)}"
                 )
                 raise e
         
@@ -285,7 +237,7 @@ class RequestRouter:
             raise last_exception
         else:
             error_msg = f"All {retry_policy.max_retries} retry attempts failed"
-            logger.error(error_msg, extra={"trace_id": trace_id})
+            logger.error(error_msg)
             raise httpx.RequestError(error_msg)
     
     async def health_check(self, api_name: str) -> bool:

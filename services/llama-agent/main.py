@@ -5,13 +5,14 @@ import os
 import asyncio
 import signal
 import sys
-from typing import Dict, Any, Optional
+from typing import Optional
 import structlog
 from dotenv import load_dotenv
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 import uvicorn
 import threading
+import json
 
 from llama_agent import LlamaAgent
 from models import AgentConfig
@@ -59,18 +60,50 @@ class AgentService:
         self.metrics_collector: Optional[AgentMetricsCollector] = None
         self.metrics_app: Optional[FastAPI] = None
         self.metrics_server = None
-    
+
+    def _load_api_endpoints(self) -> Optional[list[str]]:
+        """Load API endpoints from ape.config.json."""
+        config_path = os.path.join(os.path.dirname(__file__), "ape.config.json")
+        if not os.path.exists(config_path):
+            logger.warning(f"ape.config.json not found at {config_path}. Using default endpoints.") 
+            return None
+        
+        try:
+            with open(config_path, 'r') as f:
+                ape_config = json.load(f)
+            
+            # Prioritize endpointDetails if available (from parsed API spec)
+            if "apiSpec" in ape_config and "parsed" in ape_config["apiSpec"] and "endpoints" in ape_config["apiSpec"]["parsed"]:
+                endpoints = [ep["path"] for ep in ape_config["apiSpec"]["parsed"]["endpoints"]]
+                logger.info(f"Loaded {len(endpoints)} endpoints from apiSpec.parsed.endpoints in ape.config.json")
+                return endpoints
+            elif "target" in ape_config and "endpoints" in ape_config["target"]:
+                endpoints = ape_config["target"]["endpoints"]
+                logger.info(f"Loaded {len(endpoints)} endpoints from target.endpoints in ape.config.json")
+                return endpoints
+            else:
+                logger.warning("No endpoints found in ape.config.json under apiSpec.parsed.endpoints or target.endpoints.")
+                return None
+        except json.JSONDecodeError as e:
+            logger.error(f"Error decoding ape.config.json: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error loading API endpoints from ape.config.json: {e}")
+            return None
+
     def _load_config(self) -> AgentConfig:
         """Load configuration from environment variables."""
-        return AgentConfig(
+        config = AgentConfig(
             agent_id=os.getenv("AGENT_ID", f"agent-{os.getpid()}"),
             mcp_gateway_url=os.getenv("MCP_GATEWAY_URL", "http://mcp_gateway:3000"),
             cerebras_proxy_url=os.getenv("CEREBRAS_PROXY_URL", "http://cerebras_proxy:8000"),
             session_timeout_minutes=int(os.getenv("SESSION_TIMEOUT_MINUTES", "30")),
             max_retries=int(os.getenv("MAX_RETRIES", "3")),
             inference_timeout=float(os.getenv("INFERENCE_TIMEOUT", "10.0")),
-            log_level=os.getenv("LOG_LEVEL", "INFO")
+            log_level=os.getenv("LOG_LEVEL", "INFO"),
+            api_endpoints=self._load_api_endpoints()
         )
+        return config
     
     async def start(self):
         """Start the agent service."""
@@ -150,88 +183,64 @@ class AgentService:
                         await asyncio.sleep(2)
                         
                         # Execute the session with AI-driven prompt including target API details
-                        target_api_name = "test-api"
-                        available_endpoints = ["/admin/login", "/admin/dashboard/metrics", "/admin/users", "/admin/products"]
+                        target_api_name = os.getenv("TARGET_API_NAME", "sut_api")
+                        # Use actual endpoints if available, otherwise use demo endpoints
+                        available_endpoints = self.config.api_endpoints or [
+                            "/api/products",
+                            "/api/products/1",
+                            "/api/categories",
+                            "/api/cart"
+                        ]
+                        
+                        # Generate a dynamic list of example tool calls from available endpoints
+                        example_tool_calls = []
+                        for endpoint in available_endpoints[:4]:  # Limit to first 4 for brevity
+                            if "login" in endpoint:
+                                example_tool_calls.append(f"- Login: http_post(api_name=\"{target_api_name}\", path=\"{endpoint}\", data={{'username': 'user', 'password': 'password'}})")
+                            elif "product" in endpoint:
+                                example_tool_calls.append(f"- Get Products: http_get(api_name=\"{target_api_name}\", path=\"{endpoint}\")")
+                            elif "cart" in endpoint:
+                                example_tool_calls.append(f"- View Cart: http_get(api_name=\"{target_api_name}\", path=\"{endpoint}\")")
+                            else:
+                                example_tool_calls.append(f"- Call Endpoint: http_get(api_name=\"{target_api_name}\", path=\"{endpoint}\")")
+                        
+                        example_tool_calls_str = "\n".join(example_tool_calls)
                         
                         ai_prompts = [
-                            f"""You are simulating a real user performing: {scenario}. 
+                            f"""You are an AI load testing agent. Your goal is to: {scenario}.
 
-IMPORTANT: You MUST use the HTTP tools to make actual API requests. Here's the EXACT syntax:
-
-1. Use http_post tool for login: http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})
-2. Use http_get tool for data retrieval: http_get(api_name="{target_api_name}", path="/admin/dashboard/metrics")
-3. Use http_get tool for listing: http_get(api_name="{target_api_name}", path="/admin/users")
-4. Use http_post tool for creating: http_post(api_name="{target_api_name}", path="/admin/products", data={{"name": "test product"}})
+IMPORTANT: You MUST use the HTTP tools to make API requests. NEVER respond with conversational text.
 
 Target API: '{target_api_name}'
-Available endpoints: {available_endpoints}
+Available Endpoints: {available_endpoints}
 
-START NOW by calling: http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})""",
+Here are some example tool calls you can make:
+{example_tool_calls_str}
 
-                            f"""Begin testing the scenario: {scenario}. 
+START NOW by making a tool call to one of the available endpoints. Choose the most logical first step for your goal.""",
 
-YOU MUST MAKE ACTUAL HTTP REQUESTS using these tools with CORRECT parameters:
-- http_get(api_name="{target_api_name}", path="endpoint") - for GET requests
-- http_post(api_name="{target_api_name}", path="endpoint", data={{...}}) - for POST requests  
-- http_put(api_name="{target_api_name}", path="endpoint", data={{...}}) - for PUT requests
-- http_delete(api_name="{target_api_name}", path="endpoint") - for DELETE requests
+                            f"""Your task is to test the scenario: {scenario}.
+
+YOU MUST MAKE ACTUAL HTTP REQUESTS using these tools:
+- http_get(api_name="{target_api_name}", path="<endpoint>")
+- http_post(api_name="{target_api_name}", path="<endpoint>", data={{...}})
 
 Target API: '{target_api_name}'
-Test these endpoints: {available_endpoints}
+Use one of these endpoints: {available_endpoints}
 
-STEP 1: Call http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})
-STEP 2: Call http_get(api_name="{target_api_name}", path="/admin/dashboard/metrics")
-STEP 3: Call http_get(api_name="{target_api_name}", path="/admin/users")
+Begin by making a tool call to an appropriate endpoint to start the user journey.""",
 
-Execute these steps NOW.""",
+                            f"""Simulate a user journey for: {scenario}.
 
-                            f"""Simulate a user journey for: {scenario}. 
-
-CRITICAL: You have HTTP tools available - USE THEM to make real API calls with EXACT syntax:
-
-Example usage:
-- Login: http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})
-- Get metrics: http_get(api_name="{target_api_name}", path="/admin/dashboard/metrics") 
-- List users: http_get(api_name="{target_api_name}", path="/admin/users")
-- Create product: http_post(api_name="{target_api_name}", path="/admin/products", data={{"name": "Test Product", "price": 99.99}})
+CRITICAL: You have HTTP tools. USE THEM to make real API calls.
 
 Target: '{target_api_name}' API
 Endpoints: {available_endpoints}
 
-BEGIN by making this call RIGHT NOW: http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})""",
+Example tool calls:
+{example_tool_calls_str}
 
-                            f"""Execute realistic testing for: {scenario}. 
-
-YOU HAVE HTTP TOOLS - USE THEM! Make actual API requests with CORRECT syntax:
-
-1. FIRST: http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})
-2. THEN: http_get(api_name="{target_api_name}", path="/admin/dashboard/metrics")
-3. NEXT: http_get(api_name="{target_api_name}", path="/admin/users") 
-4. FINALLY: http_get(api_name="{target_api_name}", path="/admin/products")
-
-Target API: '{target_api_name}'
-Available endpoints: {available_endpoints}
-
-DO NOT just describe what you would do - ACTUALLY CALL THE TOOLS NOW!""",
-
-                            f"""Perform intelligent load testing for: {scenario}. 
-
-MANDATORY: Use the HTTP tools to make real requests. Available tools with CORRECT syntax:
-- http_get(api_name="{target_api_name}", path="endpoint") 
-- http_post(api_name="{target_api_name}", path="endpoint", data={{...}})
-- http_put(api_name="{target_api_name}", path="endpoint", data={{...}})
-- http_delete(api_name="{target_api_name}", path="endpoint")
-
-API: '{target_api_name}'
-Endpoints: {available_endpoints}
-
-EXECUTE THIS SEQUENCE:
-1. http_post(api_name="{target_api_name}", path="/admin/login", data={{"username": "admin", "password": "admin123"}})
-2. http_get(api_name="{target_api_name}", path="/admin/dashboard/metrics")
-3. http_get(api_name="{target_api_name}", path="/admin/users")
-4. http_get(api_name="{target_api_name}", path="/admin/products")
-
-START MAKING THESE HTTP CALLS IMMEDIATELY."""
+BEGIN by making a relevant tool call RIGHT NOW.""",
                         ]
                         
                         ai_prompt = random.choice(ai_prompts)
@@ -263,7 +272,7 @@ START MAKING THESE HTTP CALLS IMMEDIATELY."""
                                 error=str(exec_error),
                                 agent_id=id(self.agent),
                                 agent_worker_id=id(self.agent.agent_worker),
-                                total_sessions_in_worker=len(self.agent.agent_worker.sessions)
+                                total_sessions_in_worker=len(self.agent.agent_worker.sessions) if self.agent and hasattr(self.agent.agent_worker, 'sessions') else 0
                             )
                     
                     except Exception as session_error:

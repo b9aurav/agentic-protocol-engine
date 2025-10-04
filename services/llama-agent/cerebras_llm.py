@@ -83,8 +83,23 @@ class CerebrasLLM(CustomLLM):
             CompletionResponse with the completion
         """
         try:
+            logger.info(
+                "Cerebras LLM complete() called",
+                prompt_length=len(prompt),
+                model=self.model_name,
+                max_tokens=kwargs.get("max_tokens", self.max_tokens),
+                temperature=kwargs.get("temperature", self.temperature)
+            )
+            
             # Convert prompt to chat format
             messages = [{"role": "user", "content": prompt}]
+            
+            logger.info(
+                "Making request to Cerebras API",
+                base_url=self.base_url,
+                model=self.model_name,
+                message_count=len(messages)
+            )
             
             # Make request to Cerebras
             response = self.client.chat.completions.create(
@@ -92,6 +107,12 @@ class CerebrasLLM(CustomLLM):
                 messages=messages,
                 max_tokens=kwargs.get("max_tokens", self.max_tokens),
                 temperature=kwargs.get("temperature", self.temperature)
+            )
+            
+            logger.info(
+                "Received response from Cerebras API",
+                status="success",
+                choices_count=len(response.choices) if hasattr(response, 'choices') else 0
             )
             
             # Extract completion text
@@ -131,13 +152,35 @@ class CerebrasLLM(CustomLLM):
             ChatResponse with the response
         """
         try:
+            logger.info(
+                "Cerebras LLM chat() called",
+                message_count=len(messages),
+                model=self.model_name,
+                max_tokens=kwargs.get("max_tokens", self.max_tokens),
+                temperature=kwargs.get("temperature", self.temperature)
+            )
+            
             # Convert LlamaIndex ChatMessage to Cerebras format
             cerebras_messages = []
-            for msg in messages:
-                cerebras_messages.append({
+            for i, msg in enumerate(messages):
+                cerebras_msg = {
                     "role": msg.role.value,
                     "content": msg.content
-                })
+                }
+                cerebras_messages.append(cerebras_msg)
+                logger.info(
+                    f"Message {i}",
+                    role=msg.role.value,
+                    content_length=len(msg.content),
+                    content_preview=msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
+                )
+            
+            logger.info(
+                "Making chat request to Cerebras API",
+                base_url=self.base_url,
+                model=self.model_name,
+                message_count=len(cerebras_messages)
+            )
             
             # Make request to Cerebras
             response = self.client.chat.completions.create(
@@ -145,6 +188,12 @@ class CerebrasLLM(CustomLLM):
                 messages=cerebras_messages,
                 max_tokens=kwargs.get("max_tokens", self.max_tokens),
                 temperature=kwargs.get("temperature", self.temperature)
+            )
+            
+            logger.info(
+                "Received chat response from Cerebras API",
+                status="success",
+                choices_count=len(response.choices) if hasattr(response, 'choices') else 0
             )
             
             # Extract response

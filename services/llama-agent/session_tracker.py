@@ -649,6 +649,14 @@ class SessionSuccessTracker:
         expected_patterns = transaction_patterns.get(transaction_type, ["general:success"])
         expected_transactions = len(expected_patterns)
         
+        self.logger.debug(
+            "Analyzing transaction completion",
+            session_id=session_context.session_id,
+            transaction_type=transaction_type.value,
+            expected_patterns=expected_patterns,
+            success_indicators=success_indicators
+        )
+        
         # Count completed transactions based on matching patterns
         completed_transactions = 0
         for pattern in expected_patterns:

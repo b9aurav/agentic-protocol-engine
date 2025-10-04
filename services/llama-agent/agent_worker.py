@@ -1,21 +1,17 @@
-"""
-Custom LlamaIndex AgentWorker implementation for stateful MCP-based agents.
-"""
 import uuid
-import time
 from typing import Dict, List, Optional, Any, Sequence
 from datetime import datetime
 import structlog
+from pydantic import Field
+import asyncio
 
 from llama_index.core.agent.types import Task, TaskStep, TaskStepOutput
 from llama_index.core.agent import CustomSimpleAgentWorker
 from llama_index.core.tools import BaseTool
 from llama_index.core.llms import LLM
-from llama_index.core.memory import BaseMemory
-from llama_index.core.base.llms.types import ChatResponse as AgentChatResponse
+from llama_index.core.base.llms.types import ChatResponse as AgentChatResponse, ChatMessage, MessageRole
 
-from models import AgentSessionContext, AgentConfig, ToolExecution, MCPToolCall
-from metrics import get_metrics_collector
+from models import AgentSessionContext, AgentConfig, ToolExecution
 
 
 logger = structlog.get_logger(__name__)
@@ -23,9 +19,10 @@ logger = structlog.get_logger(__name__)
 
 class StatefulAgentWorker(CustomSimpleAgentWorker):
     """
-    Custom LlamaIndex AgentWorker with session context management.
-    Implements stateful behavior for multi-step user journey simulation.
+    MVP Custom LlamaIndex AgentWorker with simplified session context management.
     """
+    
+    config: AgentConfig = Field(..., description="Agent configuration")
     
     def __init__(
         self,
@@ -35,30 +32,19 @@ class StatefulAgentWorker(CustomSimpleAgentWorker):
         verbose: bool = False,
         **kwargs
     ):
-        # Store config before calling super().__init__ to avoid pydantic conflicts
-        self.__dict__['_agent_config'] = config
-        self.__dict__['sessions'] = {}
-        # Ensure logger is properly initialized
-        if logger is not None:
-            self.__dict__['logger'] = logger.bind(agent_id=config.agent_id)
-        else:
-            import structlog
-            self.__dict__['logger'] = structlog.get_logger(__name__).bind(agent_id=config.agent_id)
-        
         super().__init__(
             tools=tools,
             llm=llm,
             verbose=verbose,
             **kwargs
         )
+        self.config = config
+        self.__dict__['sessions'] = {} # Initialize sessions directly
     
     @property
     def sessions(self) -> Dict[str, Any]:
-        """Access sessions dictionary stored in __dict__ to avoid pydantic conflicts."""
-        sessions_dict = self.__dict__.get('sessions', {})
-        print(f"DEBUG: sessions property accessed - Current sessions: {list(sessions_dict.keys())}")
-        return sessions_dict
-    
+        return self.__dict__.get('sessions', {})
+
     @property
     def logger(self):
         """Access logger stored in __dict__ to avoid pydantic conflicts."""
@@ -66,412 +52,150 @@ class StatefulAgentWorker(CustomSimpleAgentWorker):
         if stored_logger is None:
             # Fallback: create a new logger if none exists
             import structlog
-            stored_logger = structlog.get_logger(__name__).bind(agent_id=getattr(self, '_agent_config', {}).get('agent_id', 'unknown'))
+            stored_logger = structlog.get_logger(__name__).bind(agent_id=self.config.agent_id if hasattr(self, 'config') else 'unknown')
             self.__dict__['logger'] = stored_logger
         return stored_logger
     
     def create_session(self, goal: str, session_id: Optional[str] = None) -> str:
-        """
-        Create a new agent session with a specific goal.
-        
-        Args:
-            goal: The user journey goal for this session
-            session_id: Optional session ID, generates UUID if not provided
-            
-        Returns:
-            The session ID for the created session
-        """
-        print(f"DEBUG: create_session called - Goal: {goal}")
         if session_id is None:
             session_id = str(uuid.uuid4())
-        print(f"DEBUG: Generated session_id: {session_id}")
         
         trace_id = str(uuid.uuid4())
         
-        try:
-            print(f"DEBUG: Creating session context - ID: {session_id}, Goal: {goal}")
-            session_context = AgentSessionContext(
-                session_id=session_id,
-                trace_id=trace_id,
-                goal=goal
-            )
-            print(f"DEBUG: Session context created successfully")
-            
-            # Access sessions dictionary directly from __dict__ to avoid pydantic conflicts
-            sessions_dict = self.__dict__.get('sessions', {})
-            print(f"DEBUG: Before storing - Current sessions: {len(sessions_dict)}, Keys: {list(sessions_dict.keys())}")
-            sessions_dict[session_id] = session_context
-            self.__dict__['sessions'] = sessions_dict
-            print(f"DEBUG: After storing - Total sessions now: {len(sessions_dict)}, Keys: {list(sessions_dict.keys())}")
-            
-            # Verify it was stored by accessing it again
-            updated_sessions_dict = self.__dict__.get('sessions', {})
-            retrieved = updated_sessions_dict.get(session_id)
-            print(f"DEBUG: Verification - Retrieved session: {retrieved is not None}, Total in dict: {len(updated_sessions_dict)}")
-            
-            # Also check via the property
-            property_sessions = self.sessions
-            property_retrieved = property_sessions.get(session_id)
-            print(f"DEBUG: Property check - Retrieved via property: {property_retrieved is not None}, Total via property: {len(property_sessions)}")
-            
-        except Exception as e:
-            print(f"DEBUG: Session creation failed - Error: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
-        
-        self.logger.info(
-            "Created new agent session",
+        session_context = AgentSessionContext(
             session_id=session_id,
             trace_id=trace_id,
-            goal=goal
+            goal=goal,
+            session_data={},
+            execution_history=[],
+            current_step=0,
+            start_time=datetime.utcnow(),
+            last_action_time=datetime.utcnow(),
         )
+        
+        self.sessions[session_id] = session_context
+        self.logger.info("Created new agent session (MVP)", session_id=session_id, goal=goal)
         
         return session_id
     
     def get_session(self, session_id: str) -> Optional[AgentSessionContext]:
-        """Get session context by ID."""
-        sessions_dict = self.__dict__.get('sessions', {})
-        print(f"DEBUG: get_session called - ID: {session_id}, Available sessions: {list(sessions_dict.keys())}")
-        result = sessions_dict.get(session_id)
-        print(f"DEBUG: get_session result - Found: {result is not None}")
-        return result
+        return self.sessions.get(session_id)
     
     def update_session_data(self, session_id: str, data: Dict[str, Any]):
-        """Update session data (cookies, tokens, etc.)."""
         if session_id in self.sessions:
             self.sessions[session_id].session_data.update(data)
             self.sessions[session_id].update_last_action()
     
     def cleanup_expired_sessions(self):
-        """Remove expired sessions to prevent memory leaks."""
+        """Remove expired sessions to prevent memory leaks (minimal implementation)."""
         expired_sessions = []
         for session_id, context in self.sessions.items():
-            if context.is_expired(self.__dict__['_agent_config'].session_timeout_minutes):
+            # Assuming AgentSessionContext has an is_expired method
+            if context.is_expired(self.config.session_timeout_minutes):
                 expired_sessions.append(session_id)
         
         for session_id in expired_sessions:
             del self.sessions[session_id]
-            self.logger.info("Cleaned up expired session", session_id=session_id)
+            self.logger.info("Cleaned up expired session (MVP)", session_id=session_id)
         
         if expired_sessions:
-            self.logger.info("Session cleanup completed", expired_count=len(expired_sessions), remaining_sessions=len(self.sessions))
-    
+            self.logger.info("Session cleanup completed (MVP)", expired_count=len(expired_sessions), remaining_sessions=len(self.sessions))
+
     def _run_step(
         self,
         step: TaskStep,
         task: Task,
         **kwargs: Any,
     ) -> TaskStepOutput:
-        """
-        Execute a single step in the agent workflow with enhanced error handling.
-        Overrides the base implementation to add session context management and error categorization.
-        """
-        # Get session_id from stored context in agent worker
+        # Ensure step is a TaskStep object
+        if isinstance(step, dict):
+            if "step_id" not in step:
+                step["step_id"] = str(uuid.uuid4())
+            step = TaskStep(**step)
+
         session_id = self.__dict__.get('_current_session_id', None)
         session_context = None
-        
         if session_id:
             session_context = self.get_session(session_id)
-            if session_context:
-                # Check if session has expired or reached max steps
-                if session_context.is_expired(self._agent_config.session_timeout_minutes):
-                    self.logger.warning("Session expired", session_id=session_id)
-                    return TaskStepOutput(
-                        output=AgentChatResponse(response="Session expired"),
-                        task_step=step,
-                        is_last=True
-                    )
-                
-                if session_context.has_reached_max_steps():
-                    self.logger.warning("Session reached max steps", session_id=session_id)
-                    return TaskStepOutput(
-                        output=AgentChatResponse(response="Maximum steps reached"),
-                        task_step=step,
-                        is_last=True
-                    )
-        
-        # Execute the step using parent implementation with enhanced error handling
+
         start_time = datetime.utcnow()
-        execution_attempt = 0
-        max_step_retries = 2  # Allow 2 retries per step for transient errors
         
-        while execution_attempt <= max_step_retries:
-            try:
-                execution_attempt += 1
-                
-                # Add retry context to step if this is a retry
-                if execution_attempt > 1:
-                    self.logger.info(
-                        "Retrying step execution",
-                        session_id=session_id,
-                        step_id=step.step_id,
-                        attempt=execution_attempt,
-                        max_attempts=max_step_retries + 1
-                    )
-                
-                result = super()._run_step(step, task, **kwargs)
-                
-                # Record successful execution
-                if session_context:
-                    execution_time = (datetime.utcnow() - start_time).total_seconds()
-                    
-                    # Extract additional metadata from the result
-                    response_data = {"output": str(result.output)}
-                    
-                    # Try to extract structured data from tool calls if available
-                    if hasattr(result.output, 'sources') and result.output.sources:
-                        response_data["sources"] = [str(source) for source in result.output.sources]
-                    
-                    execution = ToolExecution(
-                        tool_name=step.step_id,
-                        parameters={"input": step.input, "attempt": execution_attempt},
-                        response=response_data,
-                        execution_time=execution_time,
-                        success=True
-                    )
-                    session_context.add_execution(execution)
-                    
-                    # Record tool call in metrics collector
-                    metrics_collector = get_metrics_collector()
-                    if metrics_collector:
-                        metrics_collector.record_tool_call(
-                            tool_name=step.step_id,
-                            success=True,
-                            session_id=session_id,
-                            execution=execution
-                        )
-                    
-                    self.logger.info(
-                        "Step executed successfully",
-                        session_id=session_id,
-                        step=session_context.current_step,
-                        execution_time=execution_time,
-                        attempts=execution_attempt
-                    )
-                
-                return result
-                
-            except Exception as e:
+        try:
+            self.logger.info("Calling super()._run_step", session_id=session_id, step_id=step.step_id, task_id=task.task_id, step_input=step.input)
+            result = super()._run_step(step, task, **kwargs)
+            self.logger.info("super()._run_step returned", session_id=session_id, step_id=step.step_id, result_type=type(result).__name__, result_is_none=(result is None))
+            
+            # Handle cases where result or result.output might be None
+            output_content = "No output from step"
+            if result and hasattr(result, 'output') and result.output is not None:
+                output_content = str(result.output)
+            elif result is None:
+                output_content = "Step returned None"
+            
+            if session_context:
                 execution_time = (datetime.utcnow() - start_time).total_seconds()
-                error_type = type(e).__name__
-                error_message = str(e)
+                execution = ToolExecution(
+                    tool_name=step.step_id,
+                    parameters={"input": step.input},
+                    response={"content": output_content},
+                    execution_time=execution_time,
+                    success=True
+                )
+                session_context.add_execution(execution)
+            
+            # Ensure result is not None before returning its attributes
+            if result is None:
+                self.logger.error("super()._run_step returned None. Generating a failure response.", session_id=session_id, step_id=step.step_id)
                 
-                # Categorize the error
-                error_category = self._categorize_error(e)
-                
-                # Determine if this error should trigger a retry
-                should_retry = (
-                    execution_attempt <= max_step_retries and
-                    error_category in ["transient", "network", "rate_limit"]
+                # Create a TaskStepOutput indicating failure
+                failure_message = "Agent failed to produce a response from the underlying LLM/tools."
+                failure_output = AgentChatResponse(
+                    message=ChatMessage(role=MessageRole.ASSISTANT, content=failure_message),
+                    text=failure_message # Ensure text attribute is present
                 )
                 
-                # Record failed execution
-                if session_context:
-                    execution = ToolExecution(
-                        tool_name=step.step_id,
-                        parameters={
-                            "input": step.input, 
-                            "attempt": execution_attempt,
-                            "error_category": error_category
-                        },
-                        response={
-                            "error": error_message,
-                            "error_type": error_type,
-                            "error_category": error_category
-                        },
-                        execution_time=execution_time,
-                        success=False,
-                        error_message=error_message
-                    )
-                    session_context.add_execution(execution)
-                    
-                    # Record failed tool call in metrics collector
-                    metrics_collector = get_metrics_collector()
-                    if metrics_collector:
-                        metrics_collector.record_tool_call(
-                            tool_name=step.step_id,
-                            success=False,
-                            session_id=session_id,
-                            execution=execution
-                        )
+                return TaskStepOutput(
+                    output=failure_output,
+                    task_step=step,
+                    is_last=True, # Mark as last step to prevent infinite loops
+                    next_steps=[]
+                ), True # Return a tuple (TaskStepOutput, bool)
+            
+            return result, result.is_last # Ensure this returns a tuple
                 
-                if should_retry:
-                    self.logger.warning(
-                        "Step execution failed, will retry",
-                        session_id=session_id,
-                        step_id=step.step_id,
-                        error=error_message,
-                        error_type=error_type,
-                        error_category=error_category,
-                        attempt=execution_attempt,
-                        execution_time=execution_time
-                    )
-                    
-                    # Apply exponential backoff for retries
-                    import asyncio
-                    import time
-                    time.sleep(min(0.5 * (2 ** (execution_attempt - 1)), 2.0))
-                    continue
-                else:
-                    self.logger.error(
-                        "Step execution failed permanently",
-                        session_id=session_id,
-                        step_id=step.step_id,
-                        error=error_message,
-                        error_type=error_type,
-                        error_category=error_category,
-                        attempts=execution_attempt,
-                        execution_time=execution_time
-                    )
-                    
-                    # For non-retryable errors, re-raise immediately
-                    raise
-        
-        # If we get here, all retries were exhausted
-        raise Exception(f"Step execution failed after {execution_attempt} attempts")
-    
-    def _categorize_error(self, error: Exception) -> str:
-        """
-        Categorize errors for appropriate handling and retry logic.
-        
-        Args:
-            error: Exception to categorize
-            
-        Returns:
-            String category: "transient", "network", "rate_limit", "auth", "client", "server", "fatal"
-        """
-        error_str = str(error).lower()
-        error_type = type(error).__name__
-        
-        # Network and connection errors
-        if any(pattern in error_str for pattern in ["connection", "network", "timeout", "dns"]):
-            return "network"
-        
-        # Rate limiting errors
-        if any(pattern in error_str for pattern in ["rate limit", "throttle", "429", "too many requests"]):
-            return "rate_limit"
-        
-        # Authentication and authorization errors
-        if any(pattern in error_str for pattern in ["401", "403", "unauthorized", "forbidden", "authentication"]):
-            return "auth"
-        
-        # Client errors (4xx)
-        if any(pattern in error_str for pattern in ["400", "404", "405", "406", "409", "422"]):
-            return "client"
-        
-        # Server errors (5xx) - often transient
-        if any(pattern in error_str for pattern in ["500", "502", "503", "504", "server error"]):
-            return "server"
-        
-        # Transient errors that should be retried
-        if any(pattern in error_str for pattern in ["temporary", "unavailable", "busy", "overload"]):
-            return "transient"
-        
-        # Schema and validation errors - usually fatal
-        if any(pattern in error_str for pattern in ["schema", "validation", "invalid", "malformed"]):
-            return "fatal"
-        
-        # Default categorization based on exception type
-        transient_types = ["TimeoutError", "ConnectionError", "HTTPError"]
-        if error_type in transient_types:
-            return "transient"
-        
-        # Default to fatal for unknown errors
-        return "fatal"
-    
-    def finalize_response(
+        except Exception as e:
+            execution_time = (datetime.utcnow() - start_time).total_seconds()
+            if session_context:
+                execution = ToolExecution(
+                    tool_name=step.step_id,
+                    parameters={"input": step.input},
+                    response={"error": str(e)},
+                    execution_time=execution_time,
+                    success=False,
+                    error_message=str(e)
+                )
+                session_context.add_execution(execution)
+            self.logger.error("Step execution failed (MVP)", session_id=session_id, error=str(e))
+            raise
+
+    async def _arun_step(
         self,
+        step: TaskStep,
         task: Task,
-        step_output: TaskStepOutput,
-    ) -> AgentChatResponse:
-        """
-        Finalize the agent response and update session context.
-        """
-        response = super().finalize_response(task, step_output)
-        
-        # Update session context if available
-        session_id = getattr(task, 'session_id', None)
-        if session_id and session_id in self.sessions:
-            session_context = self.sessions[session_id]
-            session_context.update_last_action()
-            
-            self.logger.info(
-                "Response finalized",
-                session_id=session_id,
-                total_steps=session_context.current_step,
-                session_duration=(
-                    session_context.last_action_time - session_context.start_time
-                ).total_seconds()
-            )
-        
-        return response
-    
-    def _initialize_state(self, task: Task, **kwargs) -> Dict[str, Any]:
-        """
-        Initialize state for a new task.
-        
-        Args:
-            task: The task to initialize state for
-            **kwargs: Additional keyword arguments
-            
-        Returns:
-            Dictionary containing initial state
-        """
-        # Initialize basic state
-        state = {
-            "task_id": task.task_id,
-            "step_count": 0,
-            "start_time": time.time(),
-            "session_id": getattr(task, 'session_id', None)
-        }
-        
-        # If task has a session_id, link it to our session management
-        session_id = getattr(task, 'session_id', None)
-        if session_id and session_id in self.sessions:
-            session_context = self.sessions[session_id]
-            state["session_context"] = {
-                "goal": session_context.goal,
-                "current_step": session_context.current_step,
-                "session_data": session_context.session_data.copy()
-            }
-            
-            self.logger.info(
-                "Task state initialized with session context",
-                task_id=task.task_id,
-                session_id=session_id,
-                goal=session_context.goal
-            )
-        else:
-            self.logger.info(
-                "Task state initialized without session context",
-                task_id=task.task_id
-            )
-        
-        return state
-    
-    def _finalize_task(self, task: Task, **kwargs) -> None:
-        """
-        Finalize a completed task.
-        
-        Args:
-            task: The task to finalize
-            **kwargs: Additional keyword arguments
-        """
-        # Update session context if available
-        session_id = getattr(task, 'session_id', None)
-        if session_id and session_id in self.sessions:
-            session_context = self.sessions[session_id]
-            session_context.update_last_action()
-            
-            self.logger.info(
-                "Task finalized with session update",
-                task_id=task.task_id,
-                session_id=session_id,
-                total_steps=session_context.current_step
-            )
-        else:
-            self.logger.info(
-                "Task finalized without session context",
-                task_id=task.task_id
-            )
+        **kwargs: Any,
+    ) -> TaskStepOutput:
+        """Asynchronous version of _run_step, calls sync version in a thread pool."""
+        # asyncio.to_thread returns the result of the function call directly.
+        # We need to ensure it's unpacked correctly if _run_step returns a tuple.
+        result_tuple = await asyncio.to_thread(self._run_step, step, task, **kwargs)
+        return result_tuple # This will already be a tuple (TaskStepOutput, bool)
+
+    def _initialize_state(self, task: Task, **kwargs: Any) -> Dict[str, Any]:
+        """Initialize state for a new task."""
+        # Minimal implementation for MVP
+        return {"task_id": task.task_id, "step_count": 0}
+
+    def _finalize_task(self, task: Task, **kwargs: Any) -> None:
+        """Finalize a completed task."""
+        # Minimal implementation for MVP
+        pass

@@ -55,6 +55,16 @@ class AgentSessionContext(BaseModel):
     start_time: datetime = Field(default_factory=datetime.utcnow)
     last_action_time: datetime = Field(default_factory=datetime.utcnow)
     max_steps: int = Field(default=50, description="Maximum steps before termination")
+    failure_indicators: List[str] = Field(default_factory=list, description="Indicators of task failure")
+    action_timestamps: List[datetime] = Field(default_factory=list, description="Timestamps of each action")
+    
+    # Additional fields used by session tracker
+    success_indicators: List[str] = Field(default_factory=list, description="Success indicators found during execution")
+    current_mtba: float = Field(default=0.0, description="Current mean time between actions")
+    cognitive_violations: int = Field(default=0, description="Count of cognitive latency violations")
+    
+    class Config:
+        arbitrary_types_allowed = True
     
     def update_last_action(self):
         """Update the last action timestamp."""
@@ -85,3 +95,4 @@ class AgentConfig(BaseModel):
     max_retries: int = 3
     inference_timeout: float = 10.0
     log_level: str = "INFO"
+    api_endpoints: Optional[list[str]] = None

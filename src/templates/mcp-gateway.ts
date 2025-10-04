@@ -55,6 +55,26 @@ export interface RouteConfig {
     path: string;
     interval: number;
   };
+  // Enhanced configuration for parsed API specifications
+  sessionHandling?: {
+    enabled: boolean;
+    cookieSupport: boolean;
+    headerSupport: boolean;
+    tokenRefresh: boolean;
+  };
+  paginationHandling?: {
+    enabled: boolean;
+    defaultPageSize: number;
+    maxPageSize: number;
+    pageParam: string;
+    sizeParam: string;
+  };
+  dataModels?: Record<string, any>;
+  errorHandling?: {
+    patterns: string[];
+    retryableErrors: number[];
+    nonRetryableErrors: number[];
+  };
 }
 
 export interface EndpointConfig {
@@ -64,6 +84,17 @@ export interface EndpointConfig {
   rateLimit?: {
     windowMs: number;
     max: number;
+  };
+  // Enhanced metadata for parsed API specifications
+  metadata?: {
+    parameters?: any;
+    responses?: any;
+    sessionRequired?: boolean;
+    sampleData?: Record<string, any>;
+    requiredFields?: string[];
+    optionalFields?: string[];
+    validation?: Record<string, any>;
+    responseHandling?: Record<string, any>;
   };
 }
 
@@ -119,7 +150,7 @@ export function generateMCPGatewayConfig(config: SetupAnswers): MCPGatewayConfig
         name: 'System Under Test API',
         description: `Target application API at ${config.targetUrl}`,
         base_url: config.targetUrl,
-        timeout: 30000, // 30 seconds
+        timeout: 30, // 30 seconds
         retry_policy: {
           max_retries: 3,
           backoff_factor: 1.5,
@@ -130,7 +161,7 @@ export function generateMCPGatewayConfig(config: SetupAnswers): MCPGatewayConfig
         health_check: {
           enabled: true,
           path: '/health',
-          interval: 30000 // 30 seconds
+          interval: 30 // 30 seconds
         }
       },
       // Cerebras Proxy route for LLM inference - Requirements 2.1, 2.3
@@ -138,7 +169,7 @@ export function generateMCPGatewayConfig(config: SetupAnswers): MCPGatewayConfig
         name: 'Cerebras Inference API',
         description: 'High-speed LLM inference via Cerebras proxy',
         base_url: 'http://cerebras_proxy:8000',
-        timeout: 10000, // 10 seconds for fast inference
+        timeout: 10, // 10 seconds for fast inference
         retry_policy: {
           max_retries: 2,
           backoff_factor: 1.2,
@@ -168,7 +199,7 @@ export function generateMCPGatewayConfig(config: SetupAnswers): MCPGatewayConfig
         health_check: {
           enabled: true,
           path: '/health',
-          interval: 15000 // 15 seconds
+          interval: 15 // 15 seconds
         }
       }
     },

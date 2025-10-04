@@ -14,7 +14,7 @@ APE overcomes these challenges by deploying scalable, containerized LLM agents p
 ## Features
 
 *   **AI-Driven Stateful Simulation:** Agents maintain session context and adapt actions dynamically based on application responses, simulating complex user journeys (e.g., multi-step logins, purchases).
-*   **High-Speed LLM Inference:** Leverages Cerebras Llama 4 Scout for low cognitive latency, ensuring realistic Mean Time Between Actions (MTBA).
+*   **High-Speed LLM Inference:** Leverages Cerebras llama3.1-8b for low cognitive latency, ensuring realistic Mean Time Between Actions (MTBA).
 *   **Standardized Protocol Mediation:** Docker Model Context Protocol (MCP) Gateway standardizes communication between LLM agents and the System Under Test (SUT), enhancing configurability and security.
 *   **Comprehensive Observability:** Integrated Loki, Prometheus, and Grafana stack for centralized logging, metrics, and real-time visualization of agent behavior and application performance.
 *   **User-Friendly CLI:** A Node.js-based command-line interface for easy setup, execution, and scaling of load tests.
@@ -48,7 +48,7 @@ graph TD
 ### Core Components
 
 *   **Llama Agents:** Containerized instances of LLM agents (built with LlamaIndex) responsible for executing user goals and simulating stateful user sessions. They use specialized tools (`Tool_HTTP_GET`, `Tool_HTTP_POST`, `Tool_State_Update`) to interact with the environment and manage session context.
-*   **Cerebras Llama 4 Scout / Cerebras Proxy:** The high-speed inference engine providing the cognitive power for agent decision-making. The Cerebras Proxy acts as an internal service endpoint for communication with the actual Cerebras system.
+*   **Cerebras llama3.1-8b / Cerebras Proxy:** The high-speed inference engine providing the cognitive power for agent decision-making. The Cerebras Proxy acts as an internal service endpoint for communication with the actual Cerebras system.
 *   **Docker MCP Gateway:** A critical central component that standardizes the communication format between the LLM Agents and external HTTP services (SUT and Cerebras endpoint). It acts as a decoupling layer, routing agent requests based on a defined schema.
 *   **System Under Test (SUT):** The target cloud application or service being load tested.
 *   **Observability Stack (Loki, Prometheus, Grafana):** A consolidated stack for centralized logging (Loki), metrics collection (Prometheus with cAdvisor/Node Exporter), and real-time visualization (Grafana dashboards).

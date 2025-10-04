@@ -1,11 +1,11 @@
 # Cerebras Proxy Service
 
-OpenAI-compatible API proxy for Cerebras Llama 4 Scout inference engine. This service provides a standardized interface for AI agents to access high-speed inference while implementing comprehensive performance monitoring and authentication.
+AI-compatible API proxy for Cerebras llama3.1-8b inference engine. This service provides a standardized interface for AI agents to access high-speed inference while implementing comprehensive performance monitoring and authentication.
 
 ## Features
 
-- **OpenAI-Compatible API**: Implements `/v1/chat/completions` endpoint with full OpenAI compatibility
-- **High-Speed Inference**: Forwards requests to Cerebras Llama 4 Scout for sub-second response times
+- **AI-Compatible API**: Implements `/v1/chat/completions` endpoint with full AI compatibility
+- **High-Speed Inference**: Forwards requests to Cerebras llama3.1-8b for sub-second response times
 - **Performance Monitoring**: Tracks Time-to-First-Token (TTFT), token usage, and cost metrics
 - **Authentication**: API key-based authentication with configurable security
 - **Structured Logging**: JSON-formatted logs with trace ID correlation for observability
@@ -18,7 +18,7 @@ OpenAI-compatible API proxy for Cerebras Llama 4 Scout inference engine. This se
 POST /v1/chat/completions
 ```
 
-OpenAI-compatible chat completions endpoint. Accepts standard OpenAI request format and returns compatible responses.
+AI-compatible chat completions endpoint. Accepts standard AI request format and returns compatible responses.
 
 **Request Example:**
 ```json
@@ -69,7 +69,7 @@ Returns service health status.
 GET /v1/models
 ```
 
-Returns available models (OpenAI-compatible).
+Returns available models (AI-compatible).
 
 ### Metrics
 ```
@@ -224,8 +224,8 @@ The Cerebras Proxy integrates with the Agentic Protocol Engine (APE) architectur
 
 This implementation satisfies the following APE requirements:
 
-- **Requirement 2.1**: Cerebras Llama 4 Scout integration with sub-second response times
+- **Requirement 2.1**: Cerebras llama3.1-8b integration with sub-second response times
 - **Requirement 2.2**: TTFT measurement for cognitive latency validation
-- **Requirement 2.3**: OpenAI-compatible interface for standardized access
+- **Requirement 2.3**: AI-compatible interface for standardized access
 - **Requirement 2.4**: Token usage tracking and cost calculation
 - **Requirement 4.4**: Performance monitoring and structured logging

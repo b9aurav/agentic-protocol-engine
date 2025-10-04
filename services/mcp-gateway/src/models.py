@@ -3,8 +3,8 @@ Pydantic models for MCP Gateway request/response validation.
 Implements Requirements 3.1, 3.2, 3.3 for standardized protocol mediation.
 """
 
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field, validator
 from enum import Enum
 
 
@@ -22,21 +22,21 @@ class MCPRequest(BaseModel):
     MCP-compliant request schema for agent tool calls.
     Requirement 3.3: Enforce Pydantic schema validation for MCP-compliant JSON output.
     """
-    api_name: str = Field(..., description="Target API identifier for routing")
-    method: HTTPMethod = Field(..., description="HTTP method for the request")
-    path: str = Field(..., description="API endpoint path")
-    headers: Optional[Dict[str, str]] = Field(default_factory=dict, description="Request headers")
-    data: Optional[Dict[str, Any]] = Field(None, description="Request body data")
+    api_name: str = Field(..., alias="target_api_name", description="Target API identifier for routing")
+    method: HTTPMethod = Field(..., alias="http_method", description="HTTP method for the request")
+    path: str = Field(..., alias="endpoint_path", description="API endpoint path")
+    headers: Optional[Dict[str, str]] = Field(default_factory=dict, alias="session_headers", description="Request headers")
+    data: Optional[Dict[str, Any]] = Field(None, alias="request_payload", description="Request body data")
     trace_id: Optional[str] = Field(None, description="Trace ID for request correlation")
     
-    @validator('path')
+    @field_validator('path', mode='before')
     def validate_path(cls, v):
         """Ensure path starts with forward slash."""
         if not v.startswith('/'):
             v = '/' + v
         return v
     
-    @validator('api_name')
+    @field_validator('api_name', mode='before')
     def validate_api_name(cls, v):
         """Ensure api_name is not empty and contains valid characters."""
         if not v or not v.strip():
@@ -62,7 +62,7 @@ class RouteConfig(BaseModel):
     name: str = Field(..., description="Human-readable route name")
     description: str = Field(..., description="Route description")
     base_url: str = Field(..., description="Base URL for the target service")
-    timeout: int = Field(30, description="Request timeout in seconds")
+    timeout: int = Field(10, description="Request timeout in seconds")
     retry_policy: 'RetryPolicy' = Field(default_factory=lambda: RetryPolicy())
     auth: Optional['AuthConfig'] = Field(None, description="Authentication configuration")
     health_check: Optional['HealthCheckConfig'] = Field(None, description="Health check configuration")
