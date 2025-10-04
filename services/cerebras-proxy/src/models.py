@@ -1,5 +1,5 @@
 """
-Pydantic models for OpenAI-compatible API
+Pydantic models for AI-compatible API
 """
 
 from typing import List, Optional, Dict, Any, Literal
@@ -13,7 +13,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    """Chat completion request model (OpenAI-compatible)"""
+    """Chat completion request model (AI-compatible)"""
     model: Optional[str] = Field(default="llama3.1-8b", description="Model to use for completion")
     messages: List[ChatMessage] = Field(..., description="List of messages in the conversation")
     max_tokens: Optional[int] = Field(default=1000, description="Maximum number of tokens to generate")

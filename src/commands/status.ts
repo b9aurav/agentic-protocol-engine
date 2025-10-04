@@ -93,11 +93,6 @@ async function displayStatus(): Promise<void> {
   
   // Display access points if running
   if (status.isRunning) {
-    console.log(chalk.yellow('\n🔗 Access Points:'));
-    console.log(chalk.yellow('  📊 Grafana Dashboard: http://localhost:3001 (admin/ape-admin)'));
-    console.log(chalk.yellow('  📈 Prometheus Metrics: http://localhost:9090'));
-    console.log(chalk.yellow('  🔍 MCP Gateway: http://localhost:3000'));
-    
     console.log(chalk.cyan('\n📋 Management Commands:'));
     console.log(chalk.cyan('  📋 View logs: ape-load logs'));
     console.log(chalk.cyan('  📊 Watch status: ape-load status --watch'));
